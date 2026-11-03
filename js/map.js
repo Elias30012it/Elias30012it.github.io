@@ -45,7 +45,8 @@
     const layer = el("g", {}, svg);
 
     const pins = {};
-    trails.forEach((t) => {
+    function addPin(t) {
+      if (pins[t.id]) return;
       const [x, y] = proj(t.lat, t.lng);
       const g = el("g", { class: `pin pin-${opts.diffClass[t.difficulty]}`, tabindex: "0", role: "button", "aria-label": `${t.name}, ${t.city}` }, layer);
       el("title", {}, g).textContent = `${t.name} — ${t.city}, ${t.uf}`;
@@ -55,7 +56,8 @@
       g.addEventListener("click", () => opts.onPick(t.id));
       g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onPick(t.id); } });
       pins[t.id] = { g, mark, label, x, y, on: true };
-    });
+    }
+    trails.forEach(addPin);
 
     let view = { ...HOME };
     let origin = null, radiusKm = 300;
@@ -195,6 +197,7 @@
     if (window.ResizeObserver) new ResizeObserver(() => draw()).observe(container);
 
     return {
+      addTrails(list) { list.forEach(addPin); draw(); },
       setVisible(ids) {
         Object.entries(pins).forEach(([id, p]) => { p.on = ids.has(id); p.g.style.display = p.on ? "" : "none"; });
         draw();

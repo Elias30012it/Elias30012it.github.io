@@ -7,6 +7,7 @@ Site de trilhas com comunidade, agendamento de saídas em grupo e busca de trilh
 - **Explorar** — trilhas agrupadas por estado e cidade, com filtros de estado, cidade, dificuldade, nome e raio de distância (km). Mapa do Brasil com os contornos reais dos 27 estados: clique num estado para filtrar; zoom pelos botões, roda do mouse ou pinça (a página em si não amplia). Busca por cidade ou pela localização do aparelho, ordenando pela distância.
 - **Agenda** — agende uma saída para qualquer trilha (data, horário, vagas, ponto de encontro), participe ou saia de saídas de outras pessoas, veja "Próximas", "Minhas" e "Passadas".
 - **Comunidade** — feed com publicações, curtidas e comentários; dá para marcar a trilha no post.
+- **Loja** — equipamentos para trilha com categorias, carrinho, frete grátis acima de R$ 299, parcelamento e checkout. A loja ainda não processa pagamentos: o pedido fica registrado como reserva. Cada trilha sugere equipamentos conforme a dificuldade.
 - **Perfil** — nome e cidade, pedido na primeira ação que precisa de usuário.
 
 ## Como rodar
@@ -56,4 +57,8 @@ python3 tools/fetch-osm-trails.py --save-raw osm.json > js/trails-osm.js
 ```
 
 Precisa de acesso a `overpass-api.de` e leva alguns minutos. Rode de novo de tempos em tempos para atualizar.
+
+Enquanto `js/trails-osm.js` estiver vazio, o site busca as trilhas direto no OpenStreetMap pelo navegador do
+visitante (`js/osm-live.js`): ao escolher uma cidade (raio de até 80 km) ou um estado. O resultado fica em cache
+no navegador por 7 dias.
 Dados © colaboradores do OpenStreetMap, licença ODbL (atribuição no rodapé do site).

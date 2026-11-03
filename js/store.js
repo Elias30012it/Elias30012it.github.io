@@ -39,6 +39,10 @@
   }
 
   const state = load();
+  // campos que surgiram depois da primeira versão
+  state.cart = state.cart || [];
+  state.orders = state.orders || [];
+  state.knownTrails = state.knownTrails || {};
 
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) { /* ignora */ }

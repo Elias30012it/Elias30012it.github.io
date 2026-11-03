@@ -17,6 +17,7 @@
     .filter((o) => !curated.some((c) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w))))
     .map((o) => ({ elevation: null, desc: "", tags: [], ...o, source: "osm" }));
   const TRAILS = curated.concat(osm);
+  Object.values(state.knownTrails || {}).forEach((t) => { if (!TRAILS.some((x) => x.id === t.id)) TRAILS.push(t); });
   const trailById = Object.fromEntries(TRAILS.map((t) => [t.id, t]));
   const STATE_NAMES = Object.fromEntries(window.BRAZIL_GEO.states.map((s) => [s.uf, s.name]));
 
@@ -101,7 +102,7 @@
   });
 
   // ---------- Abas ----------
-  const VIEWS = ["explorar", "agenda", "comunidade"];
+  const VIEWS = ["explorar", "agenda", "comunidade", "loja"];
   function route() {
     const tab = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "explorar";
     VIEWS.forEach((v) => { $(`#view-${v}`).hidden = v !== tab; });
@@ -118,11 +119,18 @@
     const [name, uf, lat, lng, cap] = r.split("|");
     return { name, uf, lat: +lat, lng: +lng, capital: cap === "1", key: norm(name), full: norm(`${name}, ${uf}`) };
   });
+  const POPULAR = ["sao paulo, sp", "rio de janeiro, rj", "belo horizonte, mg", "curitiba, pr", "florianopolis, sc",
+    "brasilia, df", "porto alegre, rs", "salvador, ba", "goiania, go", "campinas, sp"];
   const cleanQuery = (q) => norm(q).replace(/\s*[-–\/]\s*([a-z]{2})$/, ", $1");
 
   function cityMatches(query, limit = 12) {
     const q = cleanQuery(query);
-    if (!q) return CITIES.filter((c) => c.capital).slice(0, limit);
+    if (!q) {
+      // Sem texto: a cidade do perfil primeiro, depois as capitais mais buscadas.
+      const own = state.user?.city ? cityMatches(state.user.city, 1) : [];
+      const popular = POPULAR.map((k) => CITIES.find((c) => c.full === k)).filter(Boolean);
+      return own.concat(popular.filter((c) => !own.includes(c))).slice(0, limit);
+    }
     const starts = [], contains = [];
     for (const c of CITIES) {
       if (c.full.startsWith(q) || c.key.startsWith(q)) starts.push(c);
@@ -185,6 +193,7 @@
     fillCityFilter();
     mapView?.selectState(uf || null);
     renderTrails();
+    if (uf && !origin) loadLive({ kind: "state", uf });
   }
 
   function filteredTrails() {
@@ -318,7 +327,63 @@
     $("#locStatus").textContent = `Ordenando por distância a partir de ${o.label}.`;
     mapView?.setOrigin(o, +$("#radius").value);
     renderTrails();
+    loadLive({ kind: "around", o });
   }
+
+  // ---------- Trilhas do OpenStreetMap carregadas na hora ----------
+  // Usado enquanto js/trails-osm.js estiver vazio: busca as trilhas da região escolhida direto no OSM.
+  const HAS_STATIC_OSM = (window.OSM_TRAILS || []).length > 0;
+  const IN_PREVIEW = (() => { try { return window.top !== window.self; } catch (_) { return true; } })();
+  let liveCtrl = null, lastLive = null;
+  const loadedStates = new Set();
+
+  function osmStatus(html, kind = "") {
+    const el = $("#osmStatus");
+    el.hidden = !html;
+    el.className = `osm-status ${kind}`;
+    el.innerHTML = html || "";
+  }
+
+  function addTrails(list) {
+    const fresh = list.filter((o) => !trailById[o.id]
+      && !curated.some((c) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w))))
+      .map((o) => ({ elevation: null, desc: "", tags: [], ...o, source: "osm" }));
+    fresh.forEach((t) => { TRAILS.push(t); trailById[t.id] = t; });
+    if (fresh.length) {
+      mapView?.addTrails(fresh);
+      const uf = $("#stateFilter").value;
+      fillStateFilter(); $("#stateFilter").value = uf;
+      fillCityFilter(); fillTrailSelects(); renderStats(); renderTrails(false);
+    }
+    return fresh.length;
+  }
+
+  async function loadLive(req) {
+    if (HAS_STATIC_OSM || !window.OsmLive) return;
+    if (req.kind === "state" && loadedStates.has(req.uf)) return;
+    liveCtrl?.abort();
+    liveCtrl = new AbortController();
+    lastLive = req;
+    const where = req.kind === "state" ? STATE_NAMES[req.uf] : `até ${num(Math.min(+$("#radius").value, 80))} km de ${req.o.label}`;
+    osmStatus(`<span class="spinner" aria-hidden="true"></span> Buscando trilhas do OpenStreetMap em ${esc(where)}…`, "loading");
+    try {
+      const list = req.kind === "state"
+        ? await window.OsmLive.state(req.uf, CITIES, liveCtrl.signal)
+        : await window.OsmLive.around(req.o.lat, req.o.lng, +$("#radius").value, CITIES, liveCtrl.signal);
+      if (req.kind === "state") loadedStates.add(req.uf);
+      const n = addTrails(list);
+      osmStatus(list.length
+        ? `${plural(list.length, "trilha encontrada", "trilhas encontradas")} no OpenStreetMap em ${esc(where)}${n ? "" : " (já estavam na lista)"}.`
+        : `O OpenStreetMap não tem trilhas mapeadas em ${esc(where)}.`, "ok");
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      osmStatus(IN_PREVIEW
+        ? "Esta prévia não tem acesso a sites externos, então mostra só as trilhas da curadoria. No site publicado, as trilhas do OpenStreetMap da região aparecem aqui."
+        : `O OpenStreetMap não respondeu agora. <button class="link" type="button" data-retry>Tentar de novo</button>`, "error");
+    }
+  }
+
+  $("#osmStatus").addEventListener("click", (e) => { if (e.target.closest("[data-retry]") && lastLive) loadLive(lastLive); });
 
   $("#locateBtn").addEventListener("click", () => {
     if (!navigator.geolocation) { $("#locStatus").textContent = "Este navegador não informa a localização. Digite sua cidade."; return; }
@@ -332,6 +397,7 @@
 
   $("#searchForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+    acOpen(false);
     const q = $("#cityInput").value.trim();
     if (!q) return;
     $("#locStatus").textContent = "Buscando…";
@@ -340,8 +406,71 @@
     else $("#locStatus").textContent = `Não encontramos “${q}”. Escolha uma cidade da lista de sugestões.`;
   });
 
-  $("#cityInput").addEventListener("input", () => {
-    $("#cityList").innerHTML = cityMatches($("#cityInput").value).map((c) => `<option value="${esc(c.name)}, ${c.uf}">`).join("");
+  // ---------- Autocompletar de cidades ----------
+  const acInput = $("#cityInput"), acList = $("#cityListbox");
+  let acItems = [], acIndex = -1;
+  const fold = (s) => [...s].map((ch) => ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() || ch).join("");
+
+  function highlight(name, query) {
+    const q = fold(query.split(",")[0].trim());
+    const i = q ? fold(name).indexOf(q) : -1;
+    if (i < 0) return esc(name);
+    return esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.length)) + "</mark>" + esc(name.slice(i + q.length));
+  }
+
+  function acOpen(open) {
+    acList.hidden = !open;
+    acInput.setAttribute("aria-expanded", String(open));
+    if (!open) { acIndex = -1; acInput.removeAttribute("aria-activedescendant"); }
+  }
+
+  function acRender() {
+    const q = acInput.value;
+    acItems = cityMatches(q, 8);
+    if (!acItems.length) {
+      acList.innerHTML = `<li class="combo-empty">Nenhuma cidade encontrada</li>`;
+      acOpen(true);
+      return;
+    }
+    acList.innerHTML = (q.trim() ? "" : '<li class="combo-head" role="presentation">Mais buscadas</li>') + acItems.map((c, i) => `
+      <li role="option" id="ac-${i}" data-i="${i}" aria-selected="${i === acIndex}">
+        <span class="combo-name">${highlight(c.name, q)}</span>
+        <span class="combo-state">${esc(STATE_NAMES[c.uf])}</span>
+        <span class="uf-plate sm">${c.uf}</span>
+      </li>`).join("");
+    if (acIndex >= 0) acInput.setAttribute("aria-activedescendant", `ac-${acIndex}`);
+    acOpen(true);
+  }
+
+  function acChoose(c) {
+    acInput.value = `${c.name}, ${c.uf}`;
+    acOpen(false);
+    setOrigin({ lat: c.lat, lng: c.lng, label: `${c.name}, ${c.uf}` });
+  }
+
+  acInput.addEventListener("input", () => { acIndex = -1; acRender(); });
+  acInput.addEventListener("focus", acRender);
+  acInput.addEventListener("blur", () => setTimeout(() => acOpen(false), 120));
+  acInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (acList.hidden) acRender();
+      if (!acItems.length) return;
+      acIndex = (acIndex + (e.key === "ArrowDown" ? 1 : -1) + acItems.length) % acItems.length;
+      acRender();
+      $(`#ac-${acIndex}`)?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && !acList.hidden && acIndex >= 0) {
+      e.preventDefault();
+      acChoose(acItems[acIndex]);
+    } else if (e.key === "Escape") {
+      acOpen(false);
+    }
+  });
+  acList.addEventListener("mousedown", (e) => {
+    const li = e.target.closest("[data-i]");
+    if (!li) return;
+    e.preventDefault();
+    acChoose(acItems[+li.dataset.i]);
   });
 
   $("#radius").addEventListener("input", () => {
@@ -391,6 +520,7 @@
         ${t.source === "osm" ? `<p class="source-note">Traçado mapeado por voluntários no <a href="https://www.openstreetmap.org/${t.osm}" target="_blank" rel="noopener">OpenStreetMap</a>.${t.diffEstimated ? " Dificuldade estimada pela distância." : ""}${t.operator ? ` Gestão: ${esc(t.operator)}.` : ""} Confira as condições antes de ir.</p>` : ""}
         <h3>Próximas saídas</h3>
         ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li><b>${fmtDate(e.date)}</b> às ${esc(e.time)} · ${e.attendees.length}/${e.slots} pessoas · com ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted">Nenhuma saída agendada. Agende a primeira.</p>'}
+        ${trailGear(t)}
         <div class="actions">
           <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lng}">Como chegar</a>
           <button class="btn btn-ghost" type="button" data-close>Fechar</button>
@@ -496,8 +626,14 @@
   }
   $("#newEventBtn").addEventListener("click", () => openEventForm());
 
+  function rememberTrail(id) {
+    const t = trailById[id];
+    if (t && t.source === "osm" && !(window.OSM_TRAILS || []).some((x) => x.id === id)) state.knownTrails[id] = t;
+  }
+
   $("#eventForm").addEventListener("submit", () => {
     const name = me();
+    rememberTrail($("#evTrail").value);
     state.events.push({
       id: uid(),
       trailId: $("#evTrail").value,
@@ -565,6 +701,7 @@
     requireUser(() => {
       const text = $("#postText").value.trim();
       if (!text) return;
+      rememberTrail($("#postTrail").value);
       state.posts.push({ id: uid(), author: me(), trailId: $("#postTrail").value, text, at: Date.now(), likes: [], comments: [] });
       save();
       $("#postForm").reset();
@@ -606,21 +743,234 @@
     });
   });
 
+  // ---------- Loja ----------
+  const PRODUCTS = window.SHOP_PRODUCTS;
+  const productById = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
+  const RULES = window.SHOP_RULES;
+  const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const icon = (p, size = 64) => `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${window.SHOP_ICONS[p.icon]}</svg>`;
+  const TONE = { "Vestuário": "bark", "Calçados": "bark", "Mochilas": "bark" };
+  let shopCat = "", checkoutTotals = null;
+
+  const cartQty = () => state.cart.reduce((n, i) => n + i.qty, 0);
+  const subtotal = () => state.cart.reduce((n, i) => n + productById[i.id].price * i.qty, 0);
+  const shippingFor = (sub, optId) => (sub >= RULES.freeShippingFrom ? 0 : RULES.shipping.find((s) => s.id === optId).price);
+  const installments = (v) => (v >= RULES.installmentsFrom ? `ou ${RULES.maxInstallments}x de ${brl(v / RULES.maxInstallments)} sem juros` : "à vista");
+
+  function renderCartBadge() {
+    const n = cartQty();
+    $("#cartCount").hidden = !n;
+    $("#cartCount").textContent = n;
+    $("#cartBtn").setAttribute("aria-label", n ? `Carrinho, ${plural(n, "item", "itens")}` : "Carrinho vazio");
+  }
+
+  function addToCart(id, qty = 1) {
+    const item = state.cart.find((i) => i.id === id);
+    if (item) item.qty = Math.min(10, item.qty + qty);
+    else state.cart.push({ id, qty });
+    save(); renderCartBadge();
+    if (!$("#cartDialog").open) toast(`${productById[id].name} no carrinho.`);
+    else renderCart();
+  }
+
+  function renderShop() {
+    const cats = [...new Set(PRODUCTS.map((p) => p.cat))];
+    $("#shopCats").innerHTML = ["", ...cats].map((c) => `<button type="button" class="chip${c === shopCat ? " active" : ""}" data-cat="${esc(c)}" aria-pressed="${c === shopCat}">${c || "Tudo"}</button>`).join("");
+    let list = PRODUCTS.filter((p) => !shopCat || p.cat === shopCat);
+    const sort = $("#shopSort").value;
+    if (sort === "asc") list = list.slice().sort((a, b) => a.price - b.price);
+    if (sort === "desc") list = list.slice().sort((a, b) => b.price - a.price);
+    $("#productGrid").innerHTML = list.map((p) => {
+      const inCart = state.cart.find((i) => i.id === p.id)?.qty || 0;
+      return `
+      <li class="product">
+        <div class="product-art ${TONE[p.cat] || "leaf"}">${icon(p, 76)}</div>
+        <div class="product-body">
+          <p class="eyebrow">${esc(p.cat)}</p>
+          <h3>${esc(p.name)}</h3>
+          <p class="product-desc">${esc(p.desc)}</p>
+          <ul class="specs">${p.specs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+          <div class="price-row">
+            <div class="price-box"><span class="price">${brl(p.price)}</span><span class="installments">${installments(p.price)}</span></div>
+            <button class="btn btn-sm" type="button" data-add="${p.id}">${inCart ? `No carrinho (${inCart})` : "Adicionar"}</button>
+          </div>
+        </div>
+      </li>`;
+    }).join("");
+  }
+
+  $("#shopCats").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cat]");
+    if (!b) return;
+    shopCat = b.dataset.cat;
+    renderShop();
+  });
+  $("#shopSort").addEventListener("change", renderShop);
+  document.addEventListener("click", (e) => {
+    const add = e.target.closest("[data-add]");
+    if (add) { addToCart(add.dataset.add); renderShop(); return; }
+    if (e.target.closest("[data-open-cart]")) openCart();
+  });
+  $("#cartBtn").addEventListener("click", () => openCart());
+
+  function openCart() {
+    renderCart();
+    if (!$("#cartDialog").open) $("#cartDialog").showModal();
+  }
+
+  function renderCart() {
+    const dlg = $("#cartDialog");
+    const sub = subtotal();
+    const missing = RULES.freeShippingFrom - sub;
+    const orders = state.orders.slice().reverse();
+    dlg.innerHTML = `
+      <div class="drawer-inner">
+        <header class="drawer-head">
+          <h2 id="cartTitle">Carrinho</h2>
+          <button class="icon-btn" type="button" data-close-cart aria-label="Fechar carrinho">×</button>
+        </header>
+        ${state.cart.length ? `
+          <ul class="cart-list">${state.cart.map((i) => {
+            const p = productById[i.id];
+            return `
+            <li class="cart-item" data-id="${p.id}">
+              <span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 34)}</span>
+              <span class="cart-info"><b>${esc(p.name)}</b><span class="muted">${brl(p.price)}</span></span>
+              <span class="stepper" role="group" aria-label="Quantidade">
+                <button type="button" data-qty="-1" aria-label="Diminuir">−</button><output>${i.qty}</output><button type="button" data-qty="1" aria-label="Aumentar">+</button>
+              </span>
+              <span class="cart-line">${brl(p.price * i.qty)}</span>
+              <button class="link danger small" type="button" data-remove>Remover</button>
+            </li>`;
+          }).join("")}</ul>
+          <div class="ship-meter">
+            ${missing > 0 ? `<p>Faltam <b>${brl(missing)}</b> para o frete grátis.</p>` : "<p><b>Frete grátis</b> neste pedido.</p>"}
+            <div class="meter"><span style="width:${Math.min(100, (sub / RULES.freeShippingFrom) * 100)}%"></span></div>
+          </div>
+          <dl class="totals">
+            <div><dt>Subtotal</dt><dd>${brl(sub)}</dd></div>
+            <div><dt>Frete</dt><dd>${missing > 0 ? `a partir de ${brl(RULES.shipping[0].price)}` : "Grátis"}</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn btn-ghost" type="button" data-close-cart>Continuar comprando</button>
+            <button class="btn" type="button" data-checkout>Finalizar pedido</button>
+          </div>`
+        : `<div class="empty"><p>Seu carrinho está vazio.</p><p><a href="#loja" data-close-cart>Ver equipamentos</a></p></div>`}
+        ${orders.length ? `
+          <section class="orders">
+            <h3>Seus pedidos</h3>
+            <ul>${orders.map((o) => `<li><b>${o.id}</b> · ${new Date(o.at).toLocaleDateString("pt-BR")} · ${plural(o.items.reduce((n, i) => n + i.qty, 0), "item", "itens")} · ${brl(o.total)} <span class="tag-reserva">Reserva · ${esc(o.payment)}</span></li>`).join("")}</ul>
+          </section>` : ""}
+      </div>`;
+  }
+
+  $("#cartDialog").addEventListener("click", (e) => {
+    const dlg = $("#cartDialog");
+    if (e.target === dlg || e.target.closest("[data-close-cart]")) { dlg.close(); return; }
+    if (e.target.closest("[data-checkout]")) { dlg.close(); openCheckout(); return; }
+    const row = e.target.closest(".cart-item");
+    if (!row) return;
+    const item = state.cart.find((i) => i.id === row.dataset.id);
+    const step = e.target.closest("[data-qty]");
+    if (step) item.qty = Math.max(1, Math.min(10, item.qty + +step.dataset.qty));
+    if (e.target.closest("[data-remove]")) state.cart = state.cart.filter((i) => i !== item);
+    save(); renderCart(); renderCartBadge(); renderShop();
+  });
+
+  function updateCheckoutSummary() {
+    const sub = subtotal();
+    const opt = $('input[name="ship"]:checked')?.value || RULES.shipping[0].id;
+    const ship = shippingFor(sub, opt);
+    const total = sub + ship;
+    checkoutTotals = { sub, ship, total, opt };
+    $("#coInstallments").textContent = total >= RULES.installmentsFrom ? `Até ${RULES.maxInstallments}x de ${brl(total / RULES.maxInstallments)} sem juros` : "À vista";
+    $("#coSummary").innerHTML = `
+      <ul>${state.cart.map((i) => `<li><span>${i.qty}× ${esc(productById[i.id].name)}</span><span>${brl(productById[i.id].price * i.qty)}</span></li>`).join("")}</ul>
+      <dl class="totals">
+        <div><dt>Subtotal</dt><dd>${brl(sub)}</dd></div>
+        <div><dt>Frete</dt><dd>${ship ? brl(ship) : "Grátis"}</dd></div>
+        <div class="grand"><dt>Total</dt><dd>${brl(total)}</dd></div>
+      </dl>`;
+  }
+
+  function openCheckout() {
+    if (!state.cart.length) return;
+    const sub = subtotal();
+    $("#coShipping").innerHTML = RULES.shipping.map((s, i) => `
+      <label class="radio"><input type="radio" name="ship" value="${s.id}" ${i === 0 ? "checked" : ""} />
+        <span><b>${s.label}</b><small>${s.days}</small></span>
+        <span class="radio-price">${sub >= RULES.freeShippingFrom ? "Grátis" : brl(s.price)}</span></label>`).join("");
+    if (!$("#coName").value && state.user?.name) $("#coName").value = state.user.name;
+    if (!$("#coCity").value && state.user?.city) $("#coCity").value = state.user.city;
+    updateCheckoutSummary();
+    $("#checkoutDialog").showModal();
+  }
+
+  $("#coShipping").addEventListener("change", updateCheckoutSummary);
+  $("#coCep").addEventListener("input", (e) => {
+    const d = e.target.value.replace(/\D/g, "").slice(0, 8);
+    e.target.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+  });
+
+  $("#checkoutForm").addEventListener("submit", () => {
+    updateCheckoutSummary();
+    const t = checkoutTotals;
+    const order = {
+      id: "PL-" + String(Date.now()).slice(-6),
+      at: Date.now(),
+      items: state.cart.map((i) => ({ ...i, price: productById[i.id].price })),
+      subtotal: t.sub, shipping: t.ship, total: t.total,
+      delivery: RULES.shipping.find((s) => s.id === t.opt).label,
+      payment: $('input[name="pay"]:checked').value,
+      name: $("#coName").value.trim(), city: $("#coCity").value.trim(),
+    };
+    state.orders.push(order);
+    state.cart = [];
+    save(); renderCartBadge(); renderShop();
+    $("#orderDialog").innerHTML = `
+      <div class="form">
+        <p class="eyebrow">Pedido ${order.id}</p>
+        <h2>Pedido registrado</h2>
+        <p>${esc(order.name.split(" ")[0])}, sua reserva de ${plural(order.items.reduce((n, i) => n + i.qty, 0), "item", "itens")} no valor de <b>${brl(order.total)}</b> foi registrada, com entrega ${esc(order.delivery.toLowerCase())} para ${esc(order.city)}.</p>
+        <p class="notice">Pagamento escolhido: ${esc(order.payment)}. A loja ainda não cobra online, então nada foi cobrado. O pedido fica salvo em "Seus pedidos", no carrinho.</p>
+        <div class="actions"><button class="btn" type="button" data-close>Fechar</button></div>
+      </div>`;
+    $("[data-close]", $("#orderDialog")).addEventListener("click", () => $("#orderDialog").close());
+    $("#orderDialog").showModal();
+  });
+
+  function trailGear(t) {
+    const ids = window.SHOP_FOR_DIFFICULTY[t.difficulty] || [];
+    if (!ids.length) return "";
+    return `
+      <h3>Para levar nesta trilha</h3>
+      <ul class="gear">${ids.map((id) => { const p = productById[id]; return `
+        <li><span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 30)}</span><span class="cart-info"><b>${esc(p.name)}</b><span class="muted">${brl(p.price)}</span></span>
+        <button class="btn btn-ghost btn-sm" type="button" data-add="${p.id}">Adicionar</button></li>`; }).join("")}
+      </ul>`;
+  }
+
   // ---------- Início ----------
-  function fillSelects() {
+  function fillTrailSelects() {
     const groups = {};
     TRAILS.forEach((t) => { (groups[t.uf] = groups[t.uf] || []).push(t); });
     const opts = Object.keys(groups).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((uf) =>
-      `<optgroup label="${esc(STATE_NAMES[uf])}">${groups[uf].sort((a, b) => a.name.localeCompare(b.name))
+      `<optgroup label="${esc(STATE_NAMES[uf])}">${groups[uf].slice().sort((a, b) => a.name.localeCompare(b.name))
         .map((t) => `<option value="${t.id}">${esc(t.name)} — ${esc(t.city)}</option>`).join("")}</optgroup>`).join("");
-    $("#evTrail").innerHTML = opts;
-    $("#postTrail").insertAdjacentHTML("beforeend", opts);
-    $("#cityList").innerHTML = cityMatches("").map((c) => `<option value="${esc(c.name)}, ${c.uf}">`).join("");
+    for (const [sel, first] of [["#evTrail", ""], ["#postTrail", '<option value="">Marcar uma trilha (opcional)</option>']]) {
+      const v = $(sel).value;
+      $(sel).innerHTML = first + opts;
+      if (v) $(sel).value = v;
+    }
+  }
+
+  function fillSelects() {
+    fillTrailSelects();
     fillStateFilter();
     fillCityFilter();
   }
 
-  function renderAll() { renderStats(); renderTrails(); renderEvents(); renderFeed(); }
+  function renderAll() { renderStats(); renderTrails(); renderEvents(); renderFeed(); renderShop(); renderCartBadge(); }
 
   fillSelects();
   initMap();

@@ -26,7 +26,12 @@
         <a href="#explorar" data-tab="explorar">Explorar</a>
         <a href="#agenda" data-tab="agenda">Agenda</a>
         <a href="#comunidade" data-tab="comunidade">Comunidade</a>
+        <a href="#loja" data-tab="loja">Loja</a>
       </nav>
+      <button id="cartBtn" class="cart-btn" type="button" aria-label="Carrinho">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 8h14l-1.2 12H6.2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <span id="cartCount" class="cart-count" hidden>0</span>
+      </button>
       <button id="profileBtn" class="profile-btn" type="button" aria-label="Perfil"></button>
     </div>
   </header>
@@ -42,8 +47,11 @@
         </div>
         <form id="searchForm" class="search" autocomplete="off">
           <label for="cityInput" class="sr-only">Sua cidade</label>
-          <input id="cityInput" type="search" list="cityList" placeholder="Sua cidade, ex.: Campinas, SP" />
-          <datalist id="cityList"></datalist>
+          <div class="combo">
+            <input id="cityInput" type="search" placeholder="Sua cidade, ex.: Campinas, SP" autocomplete="off" spellcheck="false"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityListbox" />
+            <ul id="cityListbox" class="combo-list" role="listbox" aria-label="Cidades" hidden></ul>
+          </div>
           <button type="submit" class="btn">Buscar perto</button>
           <button type="button" id="locateBtn" class="btn btn-ghost" title="Usar a localização do aparelho">
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg>
@@ -83,6 +91,7 @@
             <p id="resultCount"></p>
             <button id="clearFilters" class="link" type="button" hidden>Limpar filtros</button>
           </div>
+          <div id="osmStatus" class="osm-status" role="status" hidden></div>
           <div id="trailGroups"></div>
         </div>
       </div>
@@ -136,6 +145,28 @@
           </ol>
         </aside>
       </div>
+    </section>
+    <!-- LOJA -->
+    <section id="view-loja" class="view" hidden>
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Loja</p>
+          <h1>Equipamento para trilha</h1>
+          <p class="shop-terms"><span>Frete grátis acima de R$ 299</span><span>Até 3x sem juros</span><span>Troca em 30 dias</span></p>
+        </div>
+        <button class="btn btn-ghost" type="button" data-open-cart>Ver carrinho</button>
+      </div>
+      <div class="shop-bar">
+        <div id="shopCats" class="chips" role="group" aria-label="Categorias"></div>
+        <label class="sort">Ordenar
+          <select id="shopSort">
+            <option value="rel">Mais procurados</option>
+            <option value="asc">Menor preço</option>
+            <option value="desc">Maior preço</option>
+          </select>
+        </label>
+      </div>
+      <ul id="productGrid" class="product-grid"></ul>
     </section>
   </main>
 
@@ -196,11 +227,54 @@
     </form>
   </dialog>
 
+  <!-- Carrinho -->
+  <dialog id="cartDialog" class="dialog drawer" aria-labelledby="cartTitle"></dialog>
+
+  <!-- Checkout -->
+  <dialog id="checkoutDialog" class="dialog">
+    <form id="checkoutForm" method="dialog" class="form">
+      <h2>Finalizar pedido</h2>
+      <fieldset>
+        <legend>Entrega</legend>
+        <label>Nome completo <input id="coName" type="text" autocomplete="name" required maxlength="80" /></label>
+        <div class="row">
+          <label>E-mail <input id="coEmail" type="email" autocomplete="email" required /></label>
+          <label>CEP <input id="coCep" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" pattern="\d{5}-\d{3}" required /></label>
+        </div>
+        <label>Endereço <input id="coAddress" type="text" autocomplete="street-address" placeholder="Rua, número e complemento" required /></label>
+        <label>Cidade <input id="coCity" type="text" autocomplete="address-level2" placeholder="Ex.: Campinas, SP" required /></label>
+      </fieldset>
+      <fieldset>
+        <legend>Frete</legend>
+        <div id="coShipping" class="radio-list"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Pagamento</legend>
+        <div class="radio-list">
+          <label class="radio"><input type="radio" name="pay" value="Pix" checked /> <span><b>Pix</b><small>Pagamento à vista</small></span></label>
+          <label class="radio"><input type="radio" name="pay" value="Boleto" /> <span><b>Boleto</b><small>Vence em 3 dias úteis</small></span></label>
+          <label class="radio"><input type="radio" name="pay" value="Cartão" /> <span><b>Cartão de crédito</b><small id="coInstallments">Até 3x sem juros</small></span></label>
+        </div>
+      </fieldset>
+      <div id="coSummary" class="summary"></div>
+      <p class="notice">A loja ainda não processa pagamentos online. Ao confirmar, o pedido fica registrado como reserva neste navegador; nenhum dado de cartão é pedido.</p>
+      <div class="actions">
+        <button type="button" class="btn btn-ghost" data-close>Voltar</button>
+        <button type="submit" class="btn" value="ok">Confirmar pedido</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Pedido confirmado -->
+  <dialog id="orderDialog" class="dialog dialog-sm"></dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="js/data.js"></script>
   <script src="js/trails-osm.js"></script>
   <script src="js/municipios.js"></script>
+  <script src="js/shop.js"></script>
+  <script src="js/osm-live.js"></script>
   <script src="js/brazil-geo.js"></script>
   <script src="js/map.js"></script>
   <script src="js/store.js"></script>
