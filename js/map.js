@@ -54,7 +54,7 @@
       label.textContent = t.name;
       g.addEventListener("click", () => opts.onPick(t.id));
       g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onPick(t.id); } });
-      pins[t.id] = { g, mark, label, x, y };
+      pins[t.id] = { g, mark, label, x, y, on: true };
     });
 
     let view = { ...HOME };
@@ -69,9 +69,14 @@
       svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
       const u = unitsPerPx();
       svg.style.setProperty("--u", u);
-      const showTrailLabels = view.w < 140;
+      // Rótulos só quando poucas trilhas estão na tela; marcadores menores quando há muitas.
+      const all = Object.values(pins).filter((p) => p.on);
+      const inView = all.filter((p) => p.x > view.x && p.x < view.x + view.w && p.y > view.y && p.y < view.y + view.h).length;
+      const showTrailLabels = inView <= 40;
+      const size = all.length > 400 ? 6 : all.length > 120 ? 7.5 : 9;
       Object.values(pins).forEach((p) => {
-        const s = 9 * u; // marcador quadrado girado, como uma marca de trilha pintada
+        if (!p.on) return;
+        const s = size * u; // marcador quadrado girado, como uma marca de trilha pintada
         p.mark.setAttribute("x", p.x - s / 2);
         p.mark.setAttribute("y", p.y - s / 2);
         p.mark.setAttribute("width", s);
@@ -190,7 +195,10 @@
     if (window.ResizeObserver) new ResizeObserver(() => draw()).observe(container);
 
     return {
-      setVisible(ids) { Object.entries(pins).forEach(([id, p]) => { p.g.style.display = ids.has(id) ? "" : "none"; }); },
+      setVisible(ids) {
+        Object.entries(pins).forEach(([id, p]) => { p.on = ids.has(id); p.g.style.display = p.on ? "" : "none"; });
+        draw();
+      },
       setOrigin(o, r) {
         origin = o; radiusKm = r;
         ring.setAttribute("visibility", "visible"); you.setAttribute("visibility", "visible");

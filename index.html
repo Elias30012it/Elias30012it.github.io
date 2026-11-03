@@ -42,7 +42,7 @@
         </div>
         <form id="searchForm" class="search" autocomplete="off">
           <label for="cityInput" class="sr-only">Sua cidade</label>
-          <input id="cityInput" type="search" list="cityList" placeholder="Sua cidade, ex.: Campinas" />
+          <input id="cityInput" type="search" list="cityList" placeholder="Sua cidade, ex.: Campinas, SP" />
           <datalist id="cityList"></datalist>
           <button type="submit" class="btn">Buscar perto</button>
           <button type="button" id="locateBtn" class="btn btn-ghost" title="Usar a localização do aparelho">
@@ -140,7 +140,7 @@
   </main>
 
   <footer class="footer">
-    <p>Pumping Life · Mapa: Natural Earth (domínio público) · Distâncias aproximadas em linha reta.</p>
+    <p>Pumping Life · Trilhas: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© colaboradores do OpenStreetMap</a> e curadoria própria · Municípios: IBGE · Mapa: Natural Earth · Distâncias em linha reta.</p>
   </footer>
 
   <!-- Modal: trilha -->
@@ -199,6 +199,8 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="js/data.js"></script>
+  <script src="js/trails-osm.js"></script>
+  <script src="js/municipios.js"></script>
   <script src="js/brazil-geo.js"></script>
   <script src="js/map.js"></script>
   <script src="js/store.js"></script>

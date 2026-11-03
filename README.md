@@ -24,7 +24,10 @@ Depois abra http://localhost:8000.
 ```
 index.html      páginas (abas) e modais
 css/style.css   estilos (claro/escuro, responsivo) — identidade de placa turística marrom + verde
-js/data.js      catálogo de trilhas (cidade + UF) e cidades para busca
+js/data.js      trilhas da curadoria (cidade + UF)
+js/trails-osm.js trilhas do OpenStreetMap (gerado por tools/fetch-osm-trails.py)
+js/municipios.js 5.570 municípios do IBGE para a busca (gerado por tools/build-municipios.py)
+data/municipios.csv base de municípios (IBGE, via kelvins/municipios-brasileiros, MIT)
 js/brazil-geo.js contornos dos estados (gerado por tools/build-geo.py)
 js/map.js       mapa SVG com zoom/arraste
 js/store.js     persistência (localStorage) + dados iniciais
@@ -41,3 +44,16 @@ Para virar uma comunidade real, troque `js/store.js` por uma API com banco de da
 
 Os contornos vêm do Natural Earth (domínio público), via pacotes npm `datamaps` (estados) e `world-atlas` (países vizinhos).
 Para regenerar, veja as instruções no topo de `tools/build-geo.py`.
+
+## Trilhas do OpenStreetMap
+
+O catálogo junta as trilhas da curadoria (`js/data.js`) com todas as trilhas do Brasil mapeadas no
+OpenStreetMap: rotas `route=hiking`/`route=foot` e caminhos chamados "Trilha…", "Travessia…" ou "Caminho…".
+Para cada uma o script calcula a distância pelo traçado e descobre estado e cidade.
+
+```bash
+python3 tools/fetch-osm-trails.py --save-raw osm.json > js/trails-osm.js
+```
+
+Precisa de acesso a `overpass-api.de` e leva alguns minutos. Rode de novo de tempos em tempos para atualizar.
+Dados © colaboradores do OpenStreetMap, licença ODbL (atribuição no rodapé do site).

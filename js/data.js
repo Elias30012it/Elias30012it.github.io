@@ -37,18 +37,3 @@ window.TRAILS = [
   // Goiás
   { id: "saltos-rio-preto", name: "Saltos do Rio Preto", city: "Alto Paraíso de Goiás", uf: "GO", lat: -14.1714, lng: -47.8188, km: 11, elevation: 300, hours: 5, difficulty: "Moderada", tags: ["cachoeira", "chapada"], desc: "Trilha no Parque Nacional da Chapada dos Veadeiros até saltos de 80 e 120 m." },
 ];
-
-// Cidades para a busca por proximidade (usadas quando a busca on-line não está disponível).
-window.CITIES = [
-  ["São Paulo", "SP", -23.5505, -46.6333], ["Campinas", "SP", -22.9099, -47.0626], ["São José dos Campos", "SP", -23.1896, -45.8841],
-  ["Atibaia", "SP", -23.1171, -46.5563], ["Campos do Jordão", "SP", -22.7394, -45.5914], ["Santos", "SP", -23.9608, -46.3336],
-  ["Sorocaba", "SP", -23.5015, -47.4526], ["Ribeirão Preto", "SP", -21.1775, -47.8103],
-  ["Rio de Janeiro", "RJ", -22.9068, -43.1729], ["Niterói", "RJ", -22.8832, -43.1034], ["Petrópolis", "RJ", -22.5112, -43.1779],
-  ["Belo Horizonte", "MG", -19.9167, -43.9345], ["Juiz de Fora", "MG", -21.7642, -43.3496], ["Uberlândia", "MG", -18.9186, -48.2772],
-  ["Curitiba", "PR", -25.4284, -49.2733], ["Londrina", "PR", -23.3045, -51.1696],
-  ["Florianópolis", "SC", -27.5954, -48.548], ["Joinville", "SC", -26.3045, -48.8487],
-  ["Porto Alegre", "RS", -30.0346, -51.2177], ["Vitória", "ES", -20.3155, -40.3128],
-  ["Salvador", "BA", -12.9777, -38.5016], ["Brasília", "DF", -15.7939, -47.8828], ["Goiânia", "GO", -16.6869, -49.2648],
-  ["Recife", "PE", -8.0476, -34.877], ["Fortaleza", "CE", -3.7319, -38.5267], ["Manaus", "AM", -3.119, -60.0217],
-  ["Belém", "PA", -1.4558, -48.4902], ["Cuiabá", "MT", -15.601, -56.0974], ["Campo Grande", "MS", -20.4697, -54.6201],
-];

@@ -1,6 +1,22 @@
 (function () {
   const { state, save, uid } = window.Store;
-  const TRAILS = window.TRAILS;
+  const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+  // Catálogo: trilhas da curadoria + trilhas do OpenStreetMap (js/trails-osm.js).
+  // Uma trilha do OSM a menos de 2 km de uma da curadoria e com palavras do nome em comum é a mesma trilha.
+  const STOP = new Set(["trilha", "da", "do", "de", "dos", "das", "caminho", "travessia"]);
+  const words = (n) => norm(n).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w));
+  function hav(a, b) {
+    const R = 6371, rad = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const curated = window.TRAILS.map((t) => ({ ...t, source: "curadoria" }));
+  const osm = (window.OSM_TRAILS || [])
+    .filter((o) => !curated.some((c) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w))))
+    .map((o) => ({ elevation: null, desc: "", tags: [], ...o, source: "osm" }));
+  const TRAILS = curated.concat(osm);
   const trailById = Object.fromEntries(TRAILS.map((t) => [t.id, t]));
   const STATE_NAMES = Object.fromEntries(window.BRAZIL_GEO.states.map((s) => [s.uf, s.name]));
 
@@ -8,8 +24,7 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const num = (n) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
-  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
   const todayISO = () => new Date().toISOString().slice(0, 10);
 
   const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
@@ -96,18 +111,31 @@
   window.addEventListener("hashchange", route);
 
   // ---------- Geografia ----------
-  function distanceKm(a, b) {
-    const R = 6371, rad = Math.PI / 180;
-    const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(h));
+  const distanceKm = hav;
+
+  // Municípios do IBGE: "nome|UF|lat|lng|capital;..."
+  const CITIES = window.MUNICIPIOS.split(";").map((r) => {
+    const [name, uf, lat, lng, cap] = r.split("|");
+    return { name, uf, lat: +lat, lng: +lng, capital: cap === "1", key: norm(name), full: norm(`${name}, ${uf}`) };
+  });
+  const cleanQuery = (q) => norm(q).replace(/\s*[-–\/]\s*([a-z]{2})$/, ", $1");
+
+  function cityMatches(query, limit = 12) {
+    const q = cleanQuery(query);
+    if (!q) return CITIES.filter((c) => c.capital).slice(0, limit);
+    const starts = [], contains = [];
+    for (const c of CITIES) {
+      if (c.full.startsWith(q) || c.key.startsWith(q)) starts.push(c);
+      else if (c.key.includes(q)) contains.push(c);
+    }
+    const rank = (a, b) => (b.capital - a.capital) || a.name.length - b.name.length;
+    return starts.sort(rank).concat(contains.sort(rank)).slice(0, limit);
   }
 
   function localCity(query) {
-    const q = norm(query);
-    const hit = window.CITIES.find(([name, uf]) => q === norm(`${name}, ${uf}`) || q === norm(name))
-      || window.CITIES.find(([name]) => q.includes(norm(name)));
-    return hit ? { lat: hit[2], lng: hit[3], label: `${hit[0]}, ${hit[1]}` } : null;
+    const q = cleanQuery(query);
+    const hit = CITIES.find((c) => c.full === q) || cityMatches(query, 1)[0];
+    return hit ? { lat: hit.lat, lng: hit.lng, label: `${hit.name}, ${hit.uf}` } : null;
   }
 
   async function geocode(query) {
@@ -200,7 +228,7 @@
           <i class="blaze ${DIFF_CLASS[t.difficulty]}" title="${t.difficulty}"></i>
           <span class="trail-main">
             <span class="trail-name">${esc(t.name)}</span>
-            <span class="trail-meta"><span>${num(t.km)} km</span><span>↑ ${num(t.elevation)} m</span><span>${duration(t.hours)}</span><span class="diff-${DIFF_CLASS[t.difficulty]}">${t.difficulty}</span></span>
+            <span class="trail-meta"><span>${num(t.km)} km</span>${t.elevation ? `<span>↑ ${num(t.elevation)} m</span>` : ""}<span>${duration(t.hours)}</span><span class="diff-${DIFF_CLASS[t.difficulty]}">${t.difficulty}${t.diffEstimated ? '<abbr title="Dificuldade estimada pela distância">*</abbr>' : ""}</span></span>
           </span>
           <span class="trail-side">
             ${t.dist != null ? `<span class="dist">${num(Math.round(t.dist))} km</span>` : ""}
@@ -210,7 +238,29 @@
       </li>`;
   }
 
-  function renderTrails() {
+  const PAGE = 120;
+  let shown = PAGE;
+
+  function stateOverview(list) {
+    const cities = {}, counts = {};
+    list.forEach((t) => {
+      counts[t.uf] = (counts[t.uf] || 0) + 1;
+      (cities[t.uf] = cities[t.uf] || new Set()).add(t.city);
+    });
+    return `
+      <section class="state-group overview">
+        <header class="state-head"><h2>Escolha um estado</h2><span class="state-count">ou clique no mapa</span></header>
+        <ul class="overview-list">${Object.keys(counts).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((uf) => `
+          <li><button class="overview-item" type="button" data-uf="${uf}">
+            <span class="uf-plate">${uf}</span>
+            <span class="trail-main"><span class="trail-name">${esc(STATE_NAMES[uf])}</span><span class="trail-meta"><span>${plural(counts[uf], "trilha", "trilhas")}</span><span>${plural(cities[uf].size, "cidade", "cidades")}</span></span></span>
+          </button></li>`).join("")}
+        </ul>
+      </section>`;
+  }
+
+  function renderTrails(resetPage = true) {
+    if (resetPage) shown = PAGE;
     const list = filteredTrails();
     const radius = +$("#radius").value;
     $("#radiusLabel").textContent = `${num(radius)} km`;
@@ -222,7 +272,23 @@
     const filtered = $("#stateFilter").value || $("#cityFilter").value || $("#difficulty").value || $("#nameFilter").value || origin;
     $("#clearFilters").hidden = !filtered;
 
-    $("#trailGroups").innerHTML = list.length ? groupTrails(list).map((g) => `
+    const overview = list.length > PAGE && !filtered;
+    let budget = shown;
+    const groups = overview ? [] : groupTrails(list).map((g) => {
+      const cities = [];
+      for (const c of g.cities) {
+        if (budget <= 0) break;
+        cities.push({ ...c, trails: c.trails.slice(0, budget) });
+        budget -= c.trails.length;
+      }
+      return { ...g, cities };
+    }).filter((g) => g.cities.length);
+    const rest = list.length - shown;
+
+    $("#trailGroups").innerHTML = !list.length
+      ? `<div class="empty"><p>Nenhuma trilha com esses filtros.</p><p class="muted">${origin ? "Aumente o raio de distância ou " : ""}troque o estado ou a cidade.</p></div>`
+      : overview ? stateOverview(list)
+      : groups.map((g) => `
       <section class="state-group">
         <header class="state-head">
           <span class="uf-plate">${g.uf}</span>
@@ -235,7 +301,7 @@
             <ul class="trail-list">${c.trails.map(trailRow).join("")}</ul>
           </div>`).join("")}
       </section>`).join("")
-      : `<div class="empty"><p>Nenhuma trilha com esses filtros.</p><p class="muted">${origin ? "Aumente o raio de distância ou " : ""}troque o estado ou a cidade.</p></div>`;
+      + (!overview && rest > 0 ? `<button id="moreTrails" class="btn btn-ghost more" type="button">Mostrar mais ${num(Math.min(PAGE, rest))} (faltam ${num(rest)})</button>` : "");
 
     mapView?.setVisible(new Set(list.map((t) => t.id)));
   }
@@ -244,7 +310,7 @@
     const ufs = new Set(TRAILS.map((t) => t.uf)).size;
     const cities = new Set(TRAILS.map((t) => `${t.city}|${t.uf}`)).size;
     const upcoming = state.events.filter((e) => e.date >= todayISO()).length;
-    $("#catalogStats").innerHTML = `<span><b>${TRAILS.length}</b> trilhas</span><span><b>${cities}</b> cidades</span><span><b>${ufs}</b> estados</span><span><b>${upcoming}</b> saídas agendadas</span>`;
+    $("#catalogStats").innerHTML = `<span><b>${num(TRAILS.length)}</b> trilhas</span><span><b>${num(cities)}</b> cidades</span><span><b>${ufs}</b> estados</span><span><b>${upcoming}</b> saídas agendadas</span>`;
   }
 
   function setOrigin(o) {
@@ -274,6 +340,10 @@
     else $("#locStatus").textContent = `Não encontramos “${q}”. Escolha uma cidade da lista de sugestões.`;
   });
 
+  $("#cityInput").addEventListener("input", () => {
+    $("#cityList").innerHTML = cityMatches($("#cityInput").value).map((c) => `<option value="${esc(c.name)}, ${c.uf}">`).join("");
+  });
+
   $("#radius").addEventListener("input", () => {
     if (origin) mapView?.setRadius(+$("#radius").value);
     renderTrails();
@@ -295,7 +365,10 @@
 
   $("#trailGroups").addEventListener("click", (e) => {
     const b = e.target.closest(".trail");
-    if (b) openTrail(b.dataset.id);
+    if (b) { openTrail(b.dataset.id); return; }
+    const st = e.target.closest(".overview-item");
+    if (st) { setStateFilter(st.dataset.uf); return; }
+    if (e.target.closest("#moreTrails")) { shown += PAGE; renderTrails(false); }
   });
 
   function openTrail(id) {
@@ -308,13 +381,14 @@
       <div class="form trail-detail">
         <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)} · ${esc(STATE_NAMES[t.uf])}</p>
         <h2>${esc(t.name)}</h2>
-        <p class="detail-tags"><span class="pill diff-${DIFF_CLASS[t.difficulty]}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty}</span>${t.tags.map((x) => `<span class="pill">${esc(x)}</span>`).join("")}${dist}</p>
-        <p>${esc(t.desc)}</p>
+        <p class="detail-tags"><span class="pill diff-${DIFF_CLASS[t.difficulty]}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty}${t.diffEstimated ? " (estimada)" : ""}</span>${t.tags.map((x) => `<span class="pill">${esc(x)}</span>`).join("")}${dist}</p>
+        ${t.desc ? `<p>${esc(t.desc)}</p>` : ""}
         <dl class="facts">
           <div><dt>Distância</dt><dd>${num(t.km)} km</dd></div>
-          <div><dt>Ganho de elevação</dt><dd>${num(t.elevation)} m</dd></div>
-          <div><dt>Duração média</dt><dd>${duration(t.hours)}</dd></div>
+          <div><dt>Ganho de elevação</dt><dd>${t.elevation ? `${num(t.elevation)} m` : "—"}</dd></div>
+          <div><dt>Duração ${t.source === "osm" ? "estimada" : "média"}</dt><dd>${duration(t.hours)}</dd></div>
         </dl>
+        ${t.source === "osm" ? `<p class="source-note">Traçado mapeado por voluntários no <a href="https://www.openstreetmap.org/${t.osm}" target="_blank" rel="noopener">OpenStreetMap</a>.${t.diffEstimated ? " Dificuldade estimada pela distância." : ""}${t.operator ? ` Gestão: ${esc(t.operator)}.` : ""} Confira as condições antes de ir.</p>` : ""}
         <h3>Próximas saídas</h3>
         ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li><b>${fmtDate(e.date)}</b> às ${esc(e.time)} · ${e.attendees.length}/${e.slots} pessoas · com ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted">Nenhuma saída agendada. Agende a primeira.</p>'}
         <div class="actions">
@@ -541,7 +615,7 @@
         .map((t) => `<option value="${t.id}">${esc(t.name)} — ${esc(t.city)}</option>`).join("")}</optgroup>`).join("");
     $("#evTrail").innerHTML = opts;
     $("#postTrail").insertAdjacentHTML("beforeend", opts);
-    $("#cityList").innerHTML = window.CITIES.map(([c, uf]) => `<option value="${esc(c)}, ${uf}">`).join("");
+    $("#cityList").innerHTML = cityMatches("").map((c) => `<option value="${esc(c.name)}, ${c.uf}">`).join("");
     fillStateFilter();
     fillCityFilter();
   }
