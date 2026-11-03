@@ -2,24 +2,27 @@
   const { state, save, uid } = window.Store;
   const TRAILS = window.TRAILS;
   const trailById = Object.fromEntries(TRAILS.map((t) => [t.id, t]));
+  const STATE_NAMES = Object.fromEntries(window.BRAZIL_GEO.states.map((s) => [s.uf, s.name]));
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = (n) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const todayISO = () => new Date().toISOString().slice(0, 10);
 
-  // Confirmação em diálogo próprio (window.confirm não funciona em todos os ambientes).
-  function ask(message, okLabel) {
-    return new Promise((resolve) => {
-      const dlg = $("#confirmDialog");
-      $("#confirmMsg").textContent = message;
-      $("#confirmOk").textContent = okLabel;
-      dlg.onclose = () => resolve(dlg.returnValue === "ok");
-      dlg.returnValue = "";
-      dlg.showModal();
-    });
-  }
+  const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
 
+  // ---------- Página sem zoom (o zoom fica só dentro do mapa) ----------
+  document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && ["+", "-", "=", "0", "_"].includes(e.key)) e.preventDefault();
+  });
+  ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 && !e.target.closest(".map")) e.preventDefault(); }, { passive: false });
+
+  // ---------- Utilitários de UI ----------
   function toast(msg) {
     const el = $("#toast");
     el.textContent = msg;
@@ -28,19 +31,36 @@
     toast._t = setTimeout(() => el.classList.remove("show"), 2600);
   }
 
+  function ask(message, okLabel) {
+    return new Promise((resolve) => {
+      const dlg = $("#confirmDialog");
+      $("#confirmMsg").textContent = message;
+      $("#confirmOk").textContent = okLabel;
+      dlg.returnValue = "";
+      dlg.onclose = () => resolve(dlg.returnValue === "ok");
+      dlg.showModal();
+    });
+  }
+
+  function duration(h) {
+    if (h >= 24) return `${Math.round(h / 24)} dias`;
+    return `${num(h)} h`;
+  }
+
+  function fmtDate(iso, opts = { weekday: "short", day: "2-digit", month: "short" }) {
+    return new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", opts);
+  }
+
+  $$("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+
   // ---------- Usuário ----------
-  function me() { return state.user?.name || null; }
+  const me = () => state.user?.name || null;
 
   function renderProfileBtn() {
     const name = me();
     $("#profileBtn").textContent = name ? name.slice(0, 1).toUpperCase() : "Entrar";
     $("#profileBtn").classList.toggle("avatar", !!name);
     $("#profileBtn").title = name ? `${name} — editar perfil` : "Criar perfil";
-  }
-
-  function requireUser(then) {
-    if (me()) return then();
-    openProfile(then);
   }
 
   let afterProfile = null;
@@ -50,6 +70,7 @@
     $("#pfCity").value = state.user?.city || "";
     $("#profileDialog").showModal();
   }
+  function requireUser(then) { if (me()) then(); else openProfile(then); }
 
   $("#profileBtn").addEventListener("click", () => openProfile());
   $("#profileForm").addEventListener("submit", (e) => {
@@ -59,20 +80,18 @@
     save();
     renderProfileBtn();
     renderAll();
-    toast(`Bem-vindo(a), ${name}!`);
+    toast(`Perfil salvo. Olá, ${name}.`);
     const cb = afterProfile; afterProfile = null;
     if (cb) setTimeout(cb, 0);
   });
 
-  $$("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
-
-  // ---------- Roteamento por abas ----------
+  // ---------- Abas ----------
   const VIEWS = ["explorar", "agenda", "comunidade"];
   function route() {
     const tab = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "explorar";
     VIEWS.forEach((v) => { $(`#view-${v}`).hidden = v !== tab; });
-    $$(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-    if (tab === "explorar" && mapView) setTimeout(() => mapView.refresh(), 0);
+    $$(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
+    if (tab === "explorar") setTimeout(() => mapView?.refresh(), 0);
   }
   window.addEventListener("hashchange", route);
 
@@ -84,9 +103,16 @@
     return 2 * R * Math.asin(Math.sqrt(h));
   }
 
-  const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  function localCity(query) {
+    const q = norm(query);
+    const hit = window.CITIES.find(([name, uf]) => q === norm(`${name}, ${uf}`) || q === norm(name))
+      || window.CITIES.find(([name]) => q.includes(norm(name)));
+    return hit ? { lat: hit[2], lng: hit[3], label: `${hit[0]}, ${hit[1]}` } : null;
+  }
 
   async function geocode(query) {
+    const local = localCity(query);
+    if (local) return local;
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`;
       const res = await fetch(url, { headers: { Accept: "application/json" } });
@@ -94,107 +120,146 @@
         const [hit] = await res.json();
         if (hit) return { lat: +hit.lat, lng: +hit.lon, label: hit.display_name.split(",").slice(0, 2).join(",") };
       }
-    } catch (_) { /* offline: usa fallback */ }
-    const key = Object.keys(window.CITIES).find((c) => norm(query).includes(c));
-    if (key) { const [lat, lng] = window.CITIES[key]; return { lat, lng, label: query }; }
+    } catch (_) { /* sem rede: só a lista local */ }
     return null;
   }
 
   // ---------- Explorar ----------
-  let origin = null; // {lat,lng,label}
+  let origin = null;
   let mapView = null;
 
-  const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
-
-  // Mapa com Leaflet + OpenStreetMap quando disponível; senão, mapa SVG próprio (js/map.js).
-  function createLeafletMap(container) {
-    const map = L.map(container, { scrollWheelZoom: false }).setView([-20.5, -46], 5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
-    const markers = {};
-    let originMarker = null, circle = null;
-    TRAILS.forEach((t) => {
-      markers[t.id] = L.circleMarker([t.lat, t.lng], { radius: 8, weight: 2, className: `pin pin-${DIFF_CLASS[t.difficulty]}` })
-        .addTo(map).bindTooltip(t.name).on("click", () => openTrail(t.id));
-    });
-    return {
-      setVisible(ids) {
-        Object.entries(markers).forEach(([id, m]) => { if (ids.has(id)) { if (!map.hasLayer(m)) m.addTo(map); } else m.remove(); });
-      },
-      setOrigin(o, r) {
-        originMarker?.remove(); circle?.remove();
-        originMarker = L.marker([o.lat, o.lng]).addTo(map).bindTooltip("Você está aqui");
-        circle = L.circle([o.lat, o.lng], { radius: r * 1000, className: "radius" }).addTo(map);
-        map.fitBounds(circle.getBounds(), { maxZoom: 11 });
-      },
-      setRadius(r) { circle?.setRadius(r * 1000); },
-      refresh() { map.invalidateSize(); },
-    };
+  function upcomingCount(trailId) {
+    const today = todayISO();
+    return state.events.filter((e) => e.trailId === trailId && e.date >= today).length;
   }
 
-  function initMap() {
-    const container = $("#map");
-    mapView = window.L
-      ? createLeafletMap(container)
-      : window.createSvgMap(container, TRAILS, { diffClass: DIFF_CLASS, onPick: openTrail });
+  function fillStateFilter() {
+    const counts = {};
+    TRAILS.forEach((t) => { counts[t.uf] = (counts[t.uf] || 0) + 1; });
+    $("#stateFilter").innerHTML = '<option value="">Todos os estados</option>' + Object.keys(counts)
+      .sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]))
+      .map((uf) => `<option value="${uf}">${esc(STATE_NAMES[uf])} (${counts[uf]})</option>`).join("");
+  }
+
+  function fillCityFilter() {
+    const uf = $("#stateFilter").value;
+    const prev = $("#cityFilter").value;
+    const cities = {};
+    TRAILS.filter((t) => !uf || t.uf === uf).forEach((t) => { const k = `${t.city}|${t.uf}`; cities[k] = (cities[k] || 0) + 1; });
+    $("#cityFilter").innerHTML = '<option value="">Todas as cidades</option>' + Object.keys(cities)
+      .sort((a, b) => a.localeCompare(b))
+      .map((k) => { const [c, u] = k.split("|"); return `<option value="${esc(k)}">${esc(c)}${uf ? "" : ` – ${u}`} (${cities[k]})</option>`; }).join("");
+    $("#cityFilter").value = cities[prev] ? prev : "";
+  }
+
+  function setStateFilter(uf) {
+    $("#stateFilter").value = uf || "";
+    fillCityFilter();
+    mapView?.selectState(uf || null);
+    renderTrails();
   }
 
   function filteredTrails() {
-    const radius = +$("#radius").value;
+    const uf = $("#stateFilter").value;
+    const city = $("#cityFilter").value;
     const diff = $("#difficulty").value;
+    const radius = +$("#radius").value;
     const q = norm($("#nameFilter").value);
     return TRAILS
       .map((t) => ({ ...t, dist: origin ? distanceKm(origin, t) : null }))
+      .filter((t) => !uf || t.uf === uf)
+      .filter((t) => !city || `${t.city}|${t.uf}` === city)
       .filter((t) => !diff || t.difficulty === diff)
       .filter((t) => !q || norm(`${t.name} ${t.city} ${t.tags.join(" ")}`).includes(q))
-      .filter((t) => !origin || t.dist <= radius)
-      .sort((a, b) => (origin ? a.dist - b.dist : a.name.localeCompare(b.name)));
+      .filter((t) => !origin || t.dist <= radius);
   }
 
-  function upcomingCount(trailId) {
-    const today = new Date().toISOString().slice(0, 10);
-    return state.events.filter((e) => e.trailId === trailId && e.date >= today).length;
+  function groupTrails(list) {
+    const states = new Map();
+    list.forEach((t) => {
+      if (!states.has(t.uf)) states.set(t.uf, new Map());
+      const cities = states.get(t.uf);
+      if (!cities.has(t.city)) cities.set(t.city, []);
+      cities.get(t.city).push(t);
+    });
+    const minDist = (arr) => Math.min(...arr.map((t) => t.dist));
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    return [...states.entries()].map(([uf, cities]) => {
+      const cityList = [...cities.entries()].map(([city, trails]) => ({
+        city, trails: trails.sort(origin ? (a, b) => a.dist - b.dist : byName), near: origin ? minDist(trails) : 0,
+      })).sort(origin ? (a, b) => a.near - b.near : (a, b) => a.city.localeCompare(b.city));
+      return { uf, cities: cityList, count: cityList.reduce((n, c) => n + c.trails.length, 0), near: origin ? Math.min(...cityList.map((c) => c.near)) : 0 };
+    }).sort(origin ? (a, b) => a.near - b.near : (a, b) => STATE_NAMES[a.uf].localeCompare(STATE_NAMES[b.uf]));
+  }
+
+  function trailRow(t) {
+    const n = upcomingCount(t.id);
+    return `
+      <li>
+        <button class="trail" type="button" data-id="${t.id}">
+          <i class="blaze ${DIFF_CLASS[t.difficulty]}" title="${t.difficulty}"></i>
+          <span class="trail-main">
+            <span class="trail-name">${esc(t.name)}</span>
+            <span class="trail-meta"><span>${num(t.km)} km</span><span>↑ ${num(t.elevation)} m</span><span>${duration(t.hours)}</span><span class="diff-${DIFF_CLASS[t.difficulty]}">${t.difficulty}</span></span>
+          </span>
+          <span class="trail-side">
+            ${t.dist != null ? `<span class="dist">${num(Math.round(t.dist))} km</span>` : ""}
+            ${n ? `<span class="sched">${plural(n, "saída", "saídas")}</span>` : ""}
+          </span>
+        </button>
+      </li>`;
   }
 
   function renderTrails() {
     const list = filteredTrails();
-    const ids = new Set(list.map((t) => t.id));
-    $("#radiusLabel").textContent = `${$("#radius").value} km`;
-    $("#resultCount").textContent = origin
-      ? `${list.length} trilha(s) até ${$("#radius").value} km de ${origin.label}`
-      : `${list.length} trilha(s) — defina sua localização para ordenar por distância`;
+    const radius = +$("#radius").value;
+    $("#radiusLabel").textContent = `${num(radius)} km`;
 
-    $("#trailList").innerHTML = list.length ? list.map((t) => {
-      const n = upcomingCount(t.id);
-      return `
-      <li class="trail card" data-id="${t.id}" tabindex="0">
-        <div class="trail-top">
-          <h3>${esc(t.name)}</h3>
-          <span class="badge ${DIFF_CLASS[t.difficulty]}">${t.difficulty}</span>
-        </div>
-        <p class="muted small">${esc(t.city)}${t.dist != null ? ` · <strong>${t.dist.toFixed(0)} km de você</strong>` : ""}</p>
-        <p class="stats small">🥾 ${t.km} km · ⛰️ ${t.elevation} m · ⏱️ ${t.hours} h${n ? ` · <span class="accent">📅 ${n} saída(s) agendada(s)</span>` : ""}</p>
-      </li>`;
-    }).join("") : '<li class="empty">Nenhuma trilha encontrada. Aumente o raio ou mude os filtros.</li>';
+    const where = $("#cityFilter").value ? $("#cityFilter").value.replace("|", ", ")
+      : $("#stateFilter").value ? STATE_NAMES[$("#stateFilter").value] : "Brasil";
+    $("#resultCount").innerHTML = `<strong>${plural(list.length, "trilha", "trilhas")}</strong> · ${esc(where)}`
+      + (origin ? ` · até ${num(radius)} km de ${esc(origin.label)}` : "");
+    const filtered = $("#stateFilter").value || $("#cityFilter").value || $("#difficulty").value || $("#nameFilter").value || origin;
+    $("#clearFilters").hidden = !filtered;
 
-    mapView?.setVisible(ids);
+    $("#trailGroups").innerHTML = list.length ? groupTrails(list).map((g) => `
+      <section class="state-group">
+        <header class="state-head">
+          <span class="uf-plate">${g.uf}</span>
+          <h2>${esc(STATE_NAMES[g.uf])}</h2>
+          <span class="state-count">${plural(g.count, "trilha", "trilhas")} · ${plural(g.cities.length, "cidade", "cidades")}</span>
+        </header>
+        ${g.cities.map((c) => `
+          <div class="city-group">
+            <h3 class="city-name">${esc(c.city)}</h3>
+            <ul class="trail-list">${c.trails.map(trailRow).join("")}</ul>
+          </div>`).join("")}
+      </section>`).join("")
+      : `<div class="empty"><p>Nenhuma trilha com esses filtros.</p><p class="muted">${origin ? "Aumente o raio de distância ou " : ""}troque o estado ou a cidade.</p></div>`;
+
+    mapView?.setVisible(new Set(list.map((t) => t.id)));
+  }
+
+  function renderStats() {
+    const ufs = new Set(TRAILS.map((t) => t.uf)).size;
+    const cities = new Set(TRAILS.map((t) => `${t.city}|${t.uf}`)).size;
+    const upcoming = state.events.filter((e) => e.date >= todayISO()).length;
+    $("#catalogStats").innerHTML = `<span><b>${TRAILS.length}</b> trilhas</span><span><b>${cities}</b> cidades</span><span><b>${ufs}</b> estados</span><span><b>${upcoming}</b> saídas agendadas</span>`;
   }
 
   function setOrigin(o) {
     origin = o;
-    $("#locStatus").textContent = `📍 ${o.label}`;
+    $("#locStatus").textContent = `Ordenando por distância a partir de ${o.label}.`;
     mapView?.setOrigin(o, +$("#radius").value);
     renderTrails();
   }
 
   $("#locateBtn").addEventListener("click", () => {
-    if (!navigator.geolocation) { toast("Seu navegador não suporta geolocalização."); return; }
+    if (!navigator.geolocation) { $("#locStatus").textContent = "Este navegador não informa a localização. Digite sua cidade."; return; }
     $("#locStatus").textContent = "Obtendo sua localização…";
     navigator.geolocation.getCurrentPosition(
       (p) => setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude, label: "sua localização" }),
-      () => { $("#locStatus").textContent = "Não foi possível acessar sua localização. Digite sua cidade acima."; },
+      () => { $("#locStatus").textContent = "Não foi possível acessar sua localização. Digite sua cidade."; },
       { enableHighAccuracy: false, timeout: 10000 }
     );
   });
@@ -206,66 +271,77 @@
     $("#locStatus").textContent = "Buscando…";
     const o = await geocode(q);
     if (o) setOrigin(o);
-    else $("#locStatus").textContent = `Não encontramos “${q}”. Tente outra cidade.`;
+    else $("#locStatus").textContent = `Não encontramos “${q}”. Escolha uma cidade da lista de sugestões.`;
   });
 
   $("#radius").addEventListener("input", () => {
     if (origin) mapView?.setRadius(+$("#radius").value);
     renderTrails();
   });
+  $("#stateFilter").addEventListener("change", () => setStateFilter($("#stateFilter").value));
+  $("#cityFilter").addEventListener("change", () => {
+    const v = $("#cityFilter").value;
+    if (v && !$("#stateFilter").value) { setStateFilter(v.split("|")[1]); $("#cityFilter").value = v; renderTrails(); return; }
+    renderTrails();
+  });
   $("#difficulty").addEventListener("change", renderTrails);
   $("#nameFilter").addEventListener("input", renderTrails);
-
-  $("#trailList").addEventListener("click", (e) => {
-    const li = e.target.closest(".trail");
-    if (li) openTrail(li.dataset.id);
+  $("#clearFilters").addEventListener("click", () => {
+    $("#difficulty").value = ""; $("#nameFilter").value = ""; $("#cityFilter").value = "";
+    origin = null; $("#locStatus").textContent = ""; $("#cityInput").value = "";
+    initMap();
+    setStateFilter("");
   });
-  $("#trailList").addEventListener("keydown", (e) => {
-    const li = e.target.closest(".trail");
-    if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTrail(li.dataset.id); }
+
+  $("#trailGroups").addEventListener("click", (e) => {
+    const b = e.target.closest(".trail");
+    if (b) openTrail(b.dataset.id);
   });
 
   function openTrail(id) {
     const t = trailById[id];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const evs = state.events.filter((e) => e.trailId === id && e.date >= today).sort(byDate);
-    const dist = origin ? ` · ${distanceKm(origin, t).toFixed(0)} km de você` : "";
+    const dist = origin ? `<span>${num(Math.round(distanceKm(origin, t)))} km de ${esc(origin.label)}</span>` : "";
     const dlg = $("#trailDialog");
     dlg.innerHTML = `
-      <div class="form">
-        <div class="trail-top"><h2>${esc(t.name)}</h2><span class="badge ${DIFF_CLASS[t.difficulty]}">${t.difficulty}</span></div>
-        <p class="muted">${esc(t.city)}${dist}</p>
+      <div class="form trail-detail">
+        <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)} · ${esc(STATE_NAMES[t.uf])}</p>
+        <h2>${esc(t.name)}</h2>
+        <p class="detail-tags"><span class="pill diff-${DIFF_CLASS[t.difficulty]}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty}</span>${t.tags.map((x) => `<span class="pill">${esc(x)}</span>`).join("")}${dist}</p>
         <p>${esc(t.desc)}</p>
-        <div class="facts">
-          <div><strong>${t.km} km</strong><span>distância</span></div>
-          <div><strong>${t.elevation} m</strong><span>ganho de elevação</span></div>
-          <div><strong>${t.hours} h</strong><span>duração média</span></div>
-        </div>
-        <p class="tags">${t.tags.map((x) => `<span>#${esc(x)}</span>`).join(" ")}</p>
+        <dl class="facts">
+          <div><dt>Distância</dt><dd>${num(t.km)} km</dd></div>
+          <div><dt>Ganho de elevação</dt><dd>${num(t.elevation)} m</dd></div>
+          <div><dt>Duração média</dt><dd>${duration(t.hours)}</dd></div>
+        </dl>
         <h3>Próximas saídas</h3>
-        ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li>📅 ${fmtDate(e.date)} às ${e.time} · ${e.attendees.length}/${e.slots} pessoas · por ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted small">Nenhuma saída agendada ainda. Que tal ser o primeiro?</p>'}
+        ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li><b>${fmtDate(e.date)}</b> às ${esc(e.time)} · ${e.attendees.length}/${e.slots} pessoas · com ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted">Nenhuma saída agendada. Agende a primeira.</p>'}
         <div class="actions">
-          <a class="btn btn-outline" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lng}">Como chegar</a>
-          <button class="btn btn-outline" type="button" data-close>Fechar</button>
-          <button class="btn" type="button" id="scheduleThis">Agendar esta trilha</button>
+          <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lng}">Como chegar</a>
+          <button class="btn btn-ghost" type="button" data-close>Fechar</button>
+          <button class="btn" type="button" data-schedule>Agendar esta trilha</button>
         </div>
       </div>`;
     $("[data-close]", dlg).addEventListener("click", () => dlg.close());
-    $("#scheduleThis", dlg).addEventListener("click", () => { dlg.close(); openEventForm(id); });
+    $("[data-schedule]", dlg).addEventListener("click", () => { dlg.close(); openEventForm(id); });
     dlg.showModal();
+  }
+
+  function initMap() {
+    mapView = window.createSvgMap($("#map"), TRAILS, {
+      diffClass: DIFF_CLASS,
+      onPick: openTrail,
+      onState: (uf) => setStateFilter($("#stateFilter").value === uf ? "" : uf),
+    });
   }
 
   // ---------- Agenda ----------
   let eventFilter = "upcoming";
   const byDate = (a, b) => (a.date + a.time).localeCompare(b.date + b.time);
 
-  function fmtDate(iso) {
-    const d = new Date(iso + "T12:00:00");
-    return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" });
-  }
-
   function renderEvents() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const name = me();
     let list = state.events.slice();
     if (eventFilter === "upcoming") list = list.filter((e) => e.date >= today).sort(byDate);
@@ -274,53 +350,59 @@
 
     $("#eventList").innerHTML = list.length ? list.map((e) => {
       const t = trailById[e.trailId];
-      const d = new Date(e.date + "T12:00:00");
+      if (!t) return "";
       const joined = name && e.attendees.includes(name);
       const full = e.attendees.length >= e.slots;
       const past = e.date < today;
       const isHost = name && e.host === name;
+      const left = e.slots - e.attendees.length;
       let action = "";
       if (!past) {
-        if (isHost) action = `<button class="btn btn-danger btn-sm" data-act="cancel" data-id="${e.id}">Cancelar saída</button>`;
-        else if (joined) action = `<button class="btn btn-outline btn-sm" data-act="leave" data-id="${e.id}">Sair</button>`;
+        if (isHost) action = `<button class="btn btn-ghost btn-sm danger" data-act="cancel" data-id="${e.id}">Cancelar saída</button>`;
+        else if (joined) action = `<button class="btn btn-ghost btn-sm" data-act="leave" data-id="${e.id}">Desistir</button>`;
         else action = `<button class="btn btn-sm" data-act="join" data-id="${e.id}" ${full ? "disabled" : ""}>${full ? "Lotado" : "Participar"}</button>`;
       }
       return `
-      <li class="event card${past ? " past" : ""}">
-        <div class="date-chip"><strong>${d.getDate()}</strong><span>${d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "")}</span></div>
+      <li class="event${past ? " past" : ""}">
+        <div class="ticket">
+          <span class="t-week">${fmtDate(e.date, { weekday: "short" }).replace(".", "")}</span>
+          <span class="t-day">${fmtDate(e.date, { day: "2-digit" })}</span>
+          <span class="t-month">${fmtDate(e.date, { month: "short" }).replace(".", "")}</span>
+          <span class="t-time">${esc(e.time)}</span>
+        </div>
         <div class="event-body">
-          <h3><a href="#" data-trail="${t.id}">${esc(t.name)}</a> <span class="badge ${DIFF_CLASS[t.difficulty]}">${t.difficulty}</span></h3>
-          <p class="muted small">${fmtDate(e.date)} às ${esc(e.time)} · ${esc(t.city)}</p>
-          <p class="small">📍 ${esc(e.meet)}</p>
-          ${e.desc ? `<p class="small">${esc(e.desc)}</p>` : ""}
+          <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)}</p>
+          <h3><button class="link-title" type="button" data-trail="${t.id}">${esc(t.name)}</button></h3>
+          <p class="event-meta"><span class="diff-${DIFF_CLASS[t.difficulty]}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty}</span><span>${num(t.km)} km</span><span>Encontro: ${esc(e.meet)}</span></p>
+          ${e.desc ? `<p class="event-desc">${esc(e.desc)}</p>` : ""}
           <div class="attendees">
-            ${e.attendees.slice(0, 6).map((a) => `<span class="av" title="${esc(a)}">${esc(a[0].toUpperCase())}</span>`).join("")}
-            <span class="small muted">${e.attendees.length}/${e.slots} confirmados · organizado por ${esc(e.host)}</span>
+            <span class="avatars">${e.attendees.slice(0, 6).map((a) => `<span class="av" title="${esc(a)}">${esc(a[0].toUpperCase())}</span>`).join("")}</span>
+            <span class="muted">${e.attendees.length}/${e.slots} confirmados${!past && !full ? ` · ${plural(left, "vaga", "vagas")}` : ""} · organizado por ${esc(e.host)}</span>
           </div>
         </div>
         <div class="event-action">${action}</div>
       </li>`;
-    }).join("") : `<li class="empty">${eventFilter === "mine" ? "Você ainda não participa de nenhuma saída." : "Nenhuma saída por aqui."}</li>`;
+    }).join("") : `<li class="empty"><p>${eventFilter === "mine" ? "Você ainda não participa de nenhuma saída." : eventFilter === "past" ? "Nenhuma saída passada." : "Nenhuma saída agendada."}</p></li>`;
   }
 
   $$(".seg-btn").forEach((b) => b.addEventListener("click", () => {
-    $$(".seg-btn").forEach((x) => x.classList.toggle("active", x === b));
+    $$(".seg-btn").forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-selected", x === b); });
     eventFilter = b.dataset.filter;
     renderEvents();
   }));
 
   $("#eventList").addEventListener("click", (e) => {
     const link = e.target.closest("[data-trail]");
-    if (link) { e.preventDefault(); openTrail(link.dataset.trail); return; }
+    if (link) { openTrail(link.dataset.trail); return; }
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
     const ev = state.events.find((x) => x.id === btn.dataset.id);
     requireUser(async () => {
       const name = me();
       if (btn.dataset.act === "join" && !ev.attendees.includes(name) && ev.attendees.length < ev.slots) {
-        ev.attendees.push(name); toast("Presença confirmada! 🥾");
+        ev.attendees.push(name); toast("Presença confirmada.");
       } else if (btn.dataset.act === "leave") {
-        ev.attendees = ev.attendees.filter((a) => a !== name); toast("Você saiu da saída.");
+        ev.attendees = ev.attendees.filter((a) => a !== name); toast("Você saiu desta saída.");
       } else if (btn.dataset.act === "cancel") {
         if (!(await ask("Cancelar esta saída? Todos os participantes perdem a vaga.", "Cancelar saída"))) return;
         state.events = state.events.filter((x) => x.id !== ev.id); toast("Saída cancelada.");
@@ -331,8 +413,8 @@
 
   function openEventForm(trailId) {
     requireUser(() => {
-      $("#evTrail").value = trailId || TRAILS[0].id;
-      const min = new Date().toISOString().slice(0, 10);
+      $("#evTrail").value = trailId || $("#evTrail").value || TRAILS[0].id;
+      const min = todayISO();
       $("#evDate").min = min;
       if (!$("#evDate").value || $("#evDate").value < min) $("#evDate").value = min;
       $("#eventDialog").showModal();
@@ -356,7 +438,7 @@
     save();
     $("#eventForm").reset();
     $("#evTime").value = "07:00"; $("#evSlots").value = 10;
-    toast("Trilha agendada! Convide a galera na Comunidade.");
+    toast("Trilha agendada. Convide a galera na Comunidade.");
     location.hash = "#agenda";
     renderAll();
   });
@@ -365,9 +447,10 @@
   function timeAgo(ts) {
     const s = Math.floor((Date.now() - ts) / 1000);
     if (s < 60) return "agora";
-    if (s < 3600) return `${Math.floor(s / 60)} min`;
-    if (s < 86400) return `${Math.floor(s / 3600)} h`;
-    return `${Math.floor(s / 86400)} d`;
+    if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+    if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+    const d = Math.floor(s / 86400);
+    return `há ${plural(d, "dia", "dias")}`;
   }
 
   function renderFeed() {
@@ -376,26 +459,31 @@
       const t = p.trailId ? trailById[p.trailId] : null;
       const liked = name && p.likes.includes(name);
       return `
-      <li class="post card" data-id="${p.id}">
+      <li class="post" data-id="${p.id}">
         <div class="post-head">
           <span class="av">${esc(p.author[0].toUpperCase())}</span>
-          <div><strong>${esc(p.author)}</strong><div class="muted small">${timeAgo(p.at)}${t ? ` · em <a href="#" data-trail="${t.id}">${esc(t.name)}</a>` : ""}</div></div>
-          ${name === p.author ? `<button class="link danger small" data-act="del">Excluir</button>` : ""}
+          <div class="post-who">
+            <strong>${esc(p.author)}</strong>
+            <span class="muted">${timeAgo(p.at)}</span>
+          </div>
+          ${name === p.author ? `<button class="link danger" data-act="del">Excluir</button>` : ""}
         </div>
+        ${t ? `<button class="trail-tag" type="button" data-trail="${t.id}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${esc(t.name)} · ${esc(t.city)}, ${t.uf}</button>` : ""}
         <p class="post-text">${esc(p.text)}</p>
         <div class="post-actions">
-          <button class="link${liked ? " liked" : ""}" data-act="like">${liked ? "♥" : "♡"} ${p.likes.length}</button>
-          <span class="muted small">💬 ${p.comments.length}</span>
+          <button class="link like${liked ? " liked" : ""}" data-act="like" aria-pressed="${!!liked}">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.3 4.3 2.5h2c.7-1.2 2.1-2.5 4.3-2.5 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z" fill="${liked ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            ${p.likes.length}
+          </button>
+          <span class="muted">${plural(p.comments.length, "comentário", "comentários")}</span>
         </div>
-        <ul class="comments">
-          ${p.comments.map((c) => `<li><strong>${esc(c.author)}</strong> ${esc(c.text)} <span class="muted small">· ${timeAgo(c.at)}</span></li>`).join("")}
-        </ul>
-        <form class="comment-form" data-act="comment">
-          <input type="text" placeholder="Escreva um comentário…" maxlength="300" required />
+        ${p.comments.length ? `<ul class="comments">${p.comments.map((c) => `<li><strong>${esc(c.author)}</strong> ${esc(c.text)} <span class="muted">· ${timeAgo(c.at)}</span></li>`).join("")}</ul>` : ""}
+        <form class="comment-form">
+          <input type="text" placeholder="Escreva um comentário" maxlength="300" required aria-label="Comentário" />
           <button class="btn btn-sm" type="submit">Enviar</button>
         </form>
       </li>`;
-    }).join("") || '<li class="empty">Nenhuma publicação ainda.</li>';
+    }).join("") || '<li class="empty"><p>Nenhuma publicação ainda.</p></li>';
   }
 
   $("#postForm").addEventListener("submit", (e) => {
@@ -407,13 +495,13 @@
       save();
       $("#postForm").reset();
       renderFeed();
-      toast("Publicado!");
+      toast("Publicado.");
     });
   });
 
   $("#feed").addEventListener("click", (e) => {
     const link = e.target.closest("[data-trail]");
-    if (link) { e.preventDefault(); openTrail(link.dataset.trail); return; }
+    if (link) { openTrail(link.dataset.trail); return; }
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const post = state.posts.find((p) => p.id === btn.closest(".post").dataset.id);
@@ -444,18 +532,23 @@
     });
   });
 
-  // ---------- Init ----------
-  function fillTrailSelects() {
-    const opts = TRAILS.slice().sort((a, b) => a.name.localeCompare(b.name))
-      .map((t) => `<option value="${t.id}">${esc(t.name)} — ${esc(t.city)}</option>`).join("");
+  // ---------- Início ----------
+  function fillSelects() {
+    const groups = {};
+    TRAILS.forEach((t) => { (groups[t.uf] = groups[t.uf] || []).push(t); });
+    const opts = Object.keys(groups).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((uf) =>
+      `<optgroup label="${esc(STATE_NAMES[uf])}">${groups[uf].sort((a, b) => a.name.localeCompare(b.name))
+        .map((t) => `<option value="${t.id}">${esc(t.name)} — ${esc(t.city)}</option>`).join("")}</optgroup>`).join("");
     $("#evTrail").innerHTML = opts;
     $("#postTrail").insertAdjacentHTML("beforeend", opts);
-    $("#cityList").innerHTML = Object.values(window.CITY_NAMES).map((c) => `<option value="${esc(c)}">`).join("");
+    $("#cityList").innerHTML = window.CITIES.map(([c, uf]) => `<option value="${esc(c)}, ${uf}">`).join("");
+    fillStateFilter();
+    fillCityFilter();
   }
 
-  function renderAll() { renderTrails(); renderEvents(); renderFeed(); }
+  function renderAll() { renderStats(); renderTrails(); renderEvents(); renderFeed(); }
 
-  fillTrailSelects();
+  fillSelects();
   initMap();
   renderProfileBtn();
   renderAll();

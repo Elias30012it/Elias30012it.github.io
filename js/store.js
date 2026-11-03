@@ -1,6 +1,6 @@
 // Persistência simples em localStorage. Para produção, troque por uma API/back-end.
 (function () {
-  const KEY = "pumping-life:v1";
+  const KEY = "pumping-life:v2";
 
   function uid() {
     return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -23,7 +23,7 @@
         { id: uid(), trailId: "anhangava", date: daysFromNow(-6), time: "07:30", slots: 10, meet: "Portaria do Parque Anhangava", desc: "Saída de domingo.", host: "Ana", attendees: ["Ana", "Marina", "Tiago"] },
       ],
       posts: [
-        { id: uid(), author: "Marina", trailId: "pedra-grande", text: "Fiz a Pedra Grande no domingo e o céu estava limpíssimo! Alguém topa repetir esta semana? Já criei o evento na agenda 🙌", at: now - 1000 * 60 * 60 * 5, likes: ["João", "Ana"], comments: [{ author: "João", text: "Tô dentro!", at: now - 1000 * 60 * 60 * 4 }] },
+        { id: uid(), author: "Marina", trailId: "pedra-grande", text: "Fiz a Pedra Grande no domingo e o céu estava limpíssimo! Alguém topa repetir esta semana? Já criei o evento na agenda.", at: now - 1000 * 60 * 60 * 5, likes: ["João", "Ana"], comments: [{ author: "João", text: "Tô dentro!", at: now - 1000 * 60 * 60 * 4 }] },
         { id: uid(), author: "Rafael", trailId: "pedra-da-gavea", text: "Dica pra quem vai na Gávea: comece cedo, o sol na Carrasqueira depois das 10h é pesado.", at: now - 1000 * 60 * 60 * 26, likes: ["Bia"], comments: [] },
         { id: uid(), author: "Carla", trailId: "", text: "Qual bota vocês recomendam para quem está começando? Trilhas de até 10 km.", at: now - 1000 * 60 * 60 * 50, likes: [], comments: [{ author: "Lucas", text: "Um tênis de trail com boa sola já resolve no começo!", at: now - 1000 * 60 * 60 * 48 }] },
       ],
