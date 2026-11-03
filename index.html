@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pumping Life · Trilhas</title>
+  <meta name="description" content="Encontre trilhas perto de você, agende saídas em grupo e participe da comunidade." />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a href="#explorar" class="brand">
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M2 20 9 7l4 7 3-4 6 10z" fill="currentColor"/></svg>
+      <span>Pumping Life <small>Trilhas</small></span>
+    </a>
+    <nav class="tabs" aria-label="Seções">
+      <a href="#explorar" data-tab="explorar">Explorar</a>
+      <a href="#agenda" data-tab="agenda">Agenda</a>
+      <a href="#comunidade" data-tab="comunidade">Comunidade</a>
+    </nav>
+    <button id="profileBtn" class="profile-btn" type="button" aria-label="Perfil"></button>
+  </header>
+
+  <main>
+    <!-- EXPLORAR -->
+    <section id="view-explorar" class="view">
+      <div class="hero">
+        <h1>Encontre trilhas perto de você</h1>
+        <p>Use sua localização ou busque uma cidade para ver as trilhas mais próximas.</p>
+        <form id="searchForm" class="search">
+          <input id="cityInput" type="search" placeholder="Cidade ou endereço (ex.: Campinas, SP)" autocomplete="off" />
+          <button type="submit" class="btn">Buscar</button>
+          <button type="button" id="locateBtn" class="btn btn-outline">📍 Minha localização</button>
+        </form>
+        <p id="locStatus" class="muted small"></p>
+      </div>
+
+      <div class="filters">
+        <label>Raio: <strong id="radiusLabel">300 km</strong>
+          <input id="radius" type="range" min="10" max="1500" step="10" value="300" />
+        </label>
+        <label>Dificuldade
+          <select id="difficulty">
+            <option value="">Todas</option>
+            <option>Fácil</option>
+            <option>Moderada</option>
+            <option>Difícil</option>
+          </select>
+        </label>
+        <label>Buscar por nome
+          <input id="nameFilter" type="search" placeholder="Pico, cachoeira…" />
+        </label>
+      </div>
+
+      <div class="explore-grid">
+        <div id="map" class="map" role="region" aria-label="Mapa de trilhas"></div>
+        <div>
+          <p id="resultCount" class="muted small"></p>
+          <ul id="trailList" class="trail-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- AGENDA -->
+    <section id="view-agenda" class="view" hidden>
+      <div class="section-head">
+        <h1>Agenda de trilhas</h1>
+        <button id="newEventBtn" class="btn" type="button">+ Agendar trilha</button>
+      </div>
+      <div class="seg" role="tablist">
+        <button class="seg-btn active" data-filter="upcoming">Próximas</button>
+        <button class="seg-btn" data-filter="mine">Minhas</button>
+        <button class="seg-btn" data-filter="past">Passadas</button>
+      </div>
+      <ul id="eventList" class="event-list"></ul>
+    </section>
+
+    <!-- COMUNIDADE -->
+    <section id="view-comunidade" class="view" hidden>
+      <h1>Comunidade</h1>
+      <form id="postForm" class="card post-form">
+        <textarea id="postText" rows="3" placeholder="Conte como foi sua última trilha, peça dicas ou chame a galera…" required></textarea>
+        <div class="post-form-row">
+          <select id="postTrail"><option value="">Marcar uma trilha (opcional)</option></select>
+          <button class="btn" type="submit">Publicar</button>
+        </div>
+      </form>
+      <ul id="feed" class="feed"></ul>
+    </section>
+  </main>
+
+  <!-- Modal: trilha -->
+  <dialog id="trailDialog" class="dialog"></dialog>
+
+  <!-- Modal: agendar -->
+  <dialog id="eventDialog" class="dialog">
+    <form id="eventForm" method="dialog" class="form">
+      <h2>Agendar trilha</h2>
+      <label>Trilha
+        <select id="evTrail" required></select>
+      </label>
+      <div class="row">
+        <label>Data <input id="evDate" type="date" required /></label>
+        <label>Horário <input id="evTime" type="time" value="07:00" required /></label>
+      </div>
+      <div class="row">
+        <label>Vagas <input id="evSlots" type="number" min="2" max="50" value="10" required /></label>
+        <label>Ponto de encontro <input id="evMeet" type="text" placeholder="Ex.: Portaria do parque" required /></label>
+      </div>
+      <label>Descrição
+        <textarea id="evDesc" rows="3" placeholder="Ritmo, o que levar, carona…"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn" value="ok">Agendar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: perfil -->
+  <dialog id="profileDialog" class="dialog">
+    <form id="profileForm" method="dialog" class="form">
+      <h2>Seu perfil</h2>
+      <label>Nome <input id="pfName" type="text" maxlength="40" required /></label>
+      <label>Cidade <input id="pfCity" type="text" maxlength="60" /></label>
+      <div class="actions">
+        <button type="button" class="btn btn-outline" data-close>Cancelar</button>
+        <button type="submit" class="btn" value="ok">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
