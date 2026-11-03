@@ -25,3 +25,11 @@ window.CITIES = {
   "porto alegre": [-30.0346, -51.2177], "vitoria": [-20.3155, -40.3128], "sao jose dos campos": [-23.1896, -45.8841],
   "atibaia": [-23.1171, -46.5563], "campos do jordao": [-22.7394, -45.5914],
 };
+
+window.CITY_NAMES = {
+  "sao paulo": "São Paulo, SP", "campinas": "Campinas, SP", "rio de janeiro": "Rio de Janeiro, RJ",
+  "belo horizonte": "Belo Horizonte, MG", "curitiba": "Curitiba, PR", "florianopolis": "Florianópolis, SC",
+  "salvador": "Salvador, BA", "brasilia": "Brasília, DF", "goiania": "Goiânia, GO", "porto alegre": "Porto Alegre, RS",
+  "vitoria": "Vitória, ES", "sao jose dos campos": "São José dos Campos, SP", "atibaia": "Atibaia, SP",
+  "campos do jordao": "Campos do Jordão, SP",
+};

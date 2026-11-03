@@ -8,6 +8,18 @@
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Confirmação em diálogo próprio (window.confirm não funciona em todos os ambientes).
+  function ask(message, okLabel) {
+    return new Promise((resolve) => {
+      const dlg = $("#confirmDialog");
+      $("#confirmMsg").textContent = message;
+      $("#confirmOk").textContent = okLabel;
+      dlg.onclose = () => resolve(dlg.returnValue === "ok");
+      dlg.returnValue = "";
+      dlg.showModal();
+    });
+  }
+
   function toast(msg) {
     const el = $("#toast");
     el.textContent = msg;
@@ -60,7 +72,7 @@
     const tab = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "explorar";
     VIEWS.forEach((v) => { $(`#view-${v}`).hidden = v !== tab; });
     $$(".tabs a").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-    if (tab === "explorar" && map) setTimeout(() => map.invalidateSize(), 0);
+    if (tab === "explorar" && mapView) setTimeout(() => mapView.refresh(), 0);
   }
   window.addEventListener("hashchange", route);
 
@@ -90,24 +102,43 @@
 
   // ---------- Explorar ----------
   let origin = null; // {lat,lng,label}
-  let map = null, markers = {}, originMarker = null, radiusCircle = null;
+  let mapView = null;
 
   const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
 
-  function initMap() {
-    if (!window.L) { $("#map").innerHTML = '<p class="muted pad">Mapa indisponível (sem conexão).</p>'; return; }
-    map = L.map("map", { scrollWheelZoom: false }).setView([-20.5, -46], 5);
+  // Mapa com Leaflet + OpenStreetMap quando disponível; senão, mapa SVG próprio (js/map.js).
+  function createLeafletMap(container) {
+    const map = L.map(container, { scrollWheelZoom: false }).setView([-20.5, -46], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(map);
+    const markers = {};
+    let originMarker = null, circle = null;
     TRAILS.forEach((t) => {
-      const m = L.circleMarker([t.lat, t.lng], { radius: 8, weight: 2, className: `pin pin-${DIFF_CLASS[t.difficulty]}` })
-        .addTo(map)
-        .bindTooltip(t.name);
-      m.on("click", () => openTrail(t.id));
-      markers[t.id] = m;
+      markers[t.id] = L.circleMarker([t.lat, t.lng], { radius: 8, weight: 2, className: `pin pin-${DIFF_CLASS[t.difficulty]}` })
+        .addTo(map).bindTooltip(t.name).on("click", () => openTrail(t.id));
     });
+    return {
+      setVisible(ids) {
+        Object.entries(markers).forEach(([id, m]) => { if (ids.has(id)) { if (!map.hasLayer(m)) m.addTo(map); } else m.remove(); });
+      },
+      setOrigin(o, r) {
+        originMarker?.remove(); circle?.remove();
+        originMarker = L.marker([o.lat, o.lng]).addTo(map).bindTooltip("Você está aqui");
+        circle = L.circle([o.lat, o.lng], { radius: r * 1000, className: "radius" }).addTo(map);
+        map.fitBounds(circle.getBounds(), { maxZoom: 11 });
+      },
+      setRadius(r) { circle?.setRadius(r * 1000); },
+      refresh() { map.invalidateSize(); },
+    };
+  }
+
+  function initMap() {
+    const container = $("#map");
+    mapView = window.L
+      ? createLeafletMap(container)
+      : window.createSvgMap(container, TRAILS, { diffClass: DIFF_CLASS, onPick: openTrail });
   }
 
   function filteredTrails() {
@@ -148,22 +179,13 @@
       </li>`;
     }).join("") : '<li class="empty">Nenhuma trilha encontrada. Aumente o raio ou mude os filtros.</li>';
 
-    if (map) {
-      Object.entries(markers).forEach(([id, m]) => {
-        if (ids.has(id)) { if (!map.hasLayer(m)) m.addTo(map); } else m.remove();
-      });
-    }
+    mapView?.setVisible(ids);
   }
 
   function setOrigin(o) {
     origin = o;
     $("#locStatus").textContent = `📍 ${o.label}`;
-    if (map) {
-      originMarker?.remove(); radiusCircle?.remove();
-      originMarker = L.marker([o.lat, o.lng]).addTo(map).bindTooltip("Você está aqui");
-      radiusCircle = L.circle([o.lat, o.lng], { radius: +$("#radius").value * 1000, className: "radius" }).addTo(map);
-      map.fitBounds(radiusCircle.getBounds(), { maxZoom: 11 });
-    }
+    mapView?.setOrigin(o, +$("#radius").value);
     renderTrails();
   }
 
@@ -172,7 +194,7 @@
     $("#locStatus").textContent = "Obtendo sua localização…";
     navigator.geolocation.getCurrentPosition(
       (p) => setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude, label: "sua localização" }),
-      () => { $("#locStatus").textContent = "Não foi possível obter sua localização. Busque por cidade."; },
+      () => { $("#locStatus").textContent = "Não foi possível acessar sua localização. Digite sua cidade acima."; },
       { enableHighAccuracy: false, timeout: 10000 }
     );
   });
@@ -188,7 +210,7 @@
   });
 
   $("#radius").addEventListener("input", () => {
-    if (radiusCircle) radiusCircle.setRadius(+$("#radius").value * 1000);
+    if (origin) mapView?.setRadius(+$("#radius").value);
     renderTrails();
   });
   $("#difficulty").addEventListener("change", renderTrails);
@@ -293,13 +315,14 @@
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
     const ev = state.events.find((x) => x.id === btn.dataset.id);
-    requireUser(() => {
+    requireUser(async () => {
       const name = me();
       if (btn.dataset.act === "join" && !ev.attendees.includes(name) && ev.attendees.length < ev.slots) {
         ev.attendees.push(name); toast("Presença confirmada! 🥾");
       } else if (btn.dataset.act === "leave") {
         ev.attendees = ev.attendees.filter((a) => a !== name); toast("Você saiu da saída.");
-      } else if (btn.dataset.act === "cancel" && confirm("Cancelar esta saída para todos?")) {
+      } else if (btn.dataset.act === "cancel") {
+        if (!(await ask("Cancelar esta saída? Todos os participantes perdem a vaga.", "Cancelar saída"))) return;
         state.events = state.events.filter((x) => x.id !== ev.id); toast("Saída cancelada.");
       }
       save(); renderAll();
@@ -394,12 +417,14 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const post = state.posts.find((p) => p.id === btn.closest(".post").dataset.id);
-    requireUser(() => {
+    requireUser(async () => {
       const name = me();
       if (btn.dataset.act === "like") {
         post.likes = post.likes.includes(name) ? post.likes.filter((x) => x !== name) : [...post.likes, name];
-      } else if (btn.dataset.act === "del" && post.author === name && confirm("Excluir publicação?")) {
+      } else if (btn.dataset.act === "del" && post.author === name) {
+        if (!(await ask("Excluir esta publicação?", "Excluir"))) return;
         state.posts = state.posts.filter((p) => p !== post);
+        toast("Publicação excluída.");
       }
       save(); renderFeed();
     });
@@ -425,6 +450,7 @@
       .map((t) => `<option value="${t.id}">${esc(t.name)} — ${esc(t.city)}</option>`).join("");
     $("#evTrail").innerHTML = opts;
     $("#postTrail").insertAdjacentHTML("beforeend", opts);
+    $("#cityList").innerHTML = Object.values(window.CITY_NAMES).map((c) => `<option value="${esc(c)}">`).join("");
   }
 
   function renderAll() { renderTrails(); renderEvents(); renderFeed(); }

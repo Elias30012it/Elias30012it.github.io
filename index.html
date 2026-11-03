@@ -29,7 +29,8 @@
         <h1>Encontre trilhas perto de você</h1>
         <p>Use sua localização ou busque uma cidade para ver as trilhas mais próximas.</p>
         <form id="searchForm" class="search">
-          <input id="cityInput" type="search" placeholder="Cidade ou endereço (ex.: Campinas, SP)" autocomplete="off" />
+          <input id="cityInput" type="search" list="cityList" placeholder="Cidade ou endereço (ex.: Campinas, SP)" autocomplete="off" />
+          <datalist id="cityList"></datalist>
           <button type="submit" class="btn">Buscar</button>
           <button type="button" id="locateBtn" class="btn btn-outline">📍 Minha localização</button>
         </form>
@@ -131,10 +132,22 @@
     </form>
   </dialog>
 
+  <!-- Modal: confirmação -->
+  <dialog id="confirmDialog" class="dialog dialog-sm">
+    <form method="dialog" class="form">
+      <p id="confirmMsg"></p>
+      <div class="actions">
+        <button class="btn btn-outline" value="cancel">Voltar</button>
+        <button id="confirmOk" class="btn btn-danger" value="ok">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/map.js"></script>
   <script src="js/store.js"></script>
   <script src="js/app.js"></script>
 </body>
