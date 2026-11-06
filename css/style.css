@@ -16,6 +16,8 @@
   --leaf: #e0e8d4;
   --bark-soft: #ece1d0;
   --bark-ink: #6b4122;
+  --tile-leaf: #e0e8d4;
+  --tile-bark: #ece1d0;
   --easy: #3d7a35;
   --medium: #b2801f;
   --hard: #a33b22;
@@ -50,6 +52,8 @@
     --leaf: #222e20;
     --bark-soft: #2e241a;
     --bark-ink: #d9b48c;
+    --tile-leaf: #c9d6bb;
+    --tile-bark: #dccbb2;
     --easy: #7cbf6c;
     --medium: #d8a748;
     --hard: #e27b5d;
@@ -80,6 +84,8 @@
   --leaf: #222e20;
   --bark-soft: #2e241a;
   --bark-ink: #d9b48c;
+  --tile-leaf: #c9d6bb;
+  --tile-bark: #dccbb2;
   --easy: #7cbf6c;
   --medium: #d8a748;
   --hard: #e27b5d;
@@ -717,7 +723,15 @@ legend { font-weight: 800; font-size: 1rem; margin-bottom: .5rem; padding: 0; }
 .product { transition: transform .25s cubic-bezier(.2, .7, .2, 1), box-shadow .25s; }
 .product:hover { transform: translateY(-4px); box-shadow: 0 14px 30px rgba(40, 25, 10, .14); }
 .product-art svg { transition: transform .35s cubic-bezier(.2, .9, .3, 1.3); }
-.product:hover .product-art svg { transform: rotate(-6deg) scale(1.08); }
+.product-art.leaf, .cart-art.leaf { background: var(--tile-leaf); }
+.product-art.bark, .cart-art.bark { background: var(--tile-bark); }
+.product-art { background-image: radial-gradient(circle at 50% 120%, rgba(255, 255, 255, .55), transparent 60%); }
+.product:hover .product-art .toon { animation: wobble .7s cubic-bezier(.3, 1.4, .5, 1); }
+@keyframes wobble { 0% { transform: rotate(0); } 30% { transform: rotate(-7deg) scale(1.08); } 60% { transform: rotate(4deg) scale(1.06); } 100% { transform: rotate(0) scale(1.05); } }
+.toon .spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.4s ease-in-out infinite; }
+.toon .spark.s2 { animation-delay: 1.2s; }
+@keyframes twinkle { 0%, 100% { opacity: .25; transform: scale(.6) rotate(0); } 50% { opacity: 1; transform: scale(1.1) rotate(45deg); } }
+.cart-art .toon, .gear .toon { display: block; }
 .product-grid li { animation: rise .45s cubic-bezier(.2, .7, .2, 1) both; }
 .fly {
   position: fixed; left: 0; top: 0; z-index: 3000; width: 44px; height: 44px; border-radius: 50%; pointer-events: none;

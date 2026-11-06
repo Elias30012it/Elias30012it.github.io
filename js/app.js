@@ -812,7 +812,8 @@
   const productById = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
   const RULES = window.SHOP_RULES;
   const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const icon = (p, size = 64) => `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${window.SHOP_ICONS[p.icon]}</svg>`;
+  // Ilustrações cartoon (js/shop-art.js); os brilhinhos só aparecem na vitrine.
+  const icon = (p, size = 64, sparks = false) => `<svg class="toon" viewBox="0 0 120 120" width="${size}" height="${size}" aria-hidden="true"><g stroke="${window.SHOP_ART_INK}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">${window.SHOP_ART[p.icon]}${sparks ? window.SHOP_SPARKS : ""}</g></svg>`;
   const TONE = { "Vestuário": "bark", "Calçados": "bark", "Mochilas": "bark" };
   let shopCat = "", checkoutTotals = null;
 
@@ -848,7 +849,7 @@
       const inCart = state.cart.find((i) => i.id === p.id)?.qty || 0;
       return `
       <li class="product">
-        <div class="product-art ${TONE[p.cat] || "leaf"}">${icon(p, 76)}</div>
+        <div class="product-art ${TONE[p.cat] || "leaf"}">${icon(p, 128, true)}</div>
         <div class="product-body">
           <p class="eyebrow">${esc(p.cat)}</p>
           <h3>${esc(p.name)}</h3>
@@ -875,7 +876,7 @@
     if (add) {
       const p = productById[add.dataset.add];
       const from = add.closest(".product")?.querySelector(".product-art") || add;
-      window.FX.flyTo(from, $("#cartBtn"), icon(p, 28));
+      window.FX.flyTo(from, $("#cartBtn"), icon(p, 38));
       addToCart(add.dataset.add); renderShop(); return;
     }
     if (e.target.closest("[data-open-cart]")) openCart();
@@ -903,7 +904,7 @@
             const p = productById[i.id];
             return `
             <li class="cart-item" data-id="${p.id}">
-              <span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 34)}</span>
+              <span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 46)}</span>
               <span class="cart-info"><b>${esc(p.name)}</b><span class="muted">${brl(p.price)}</span></span>
               <span class="stepper" role="group" aria-label="Quantidade">
                 <button type="button" data-qty="-1" aria-label="Diminuir">−</button><output>${i.qty}</output><button type="button" data-qty="1" aria-label="Aumentar">+</button>
@@ -1014,7 +1015,7 @@
     return `
       <h3>Para levar nesta trilha</h3>
       <ul class="gear">${ids.map((id) => { const p = productById[id]; return `
-        <li><span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 30)}</span><span class="cart-info"><b>${esc(p.name)}</b><span class="muted">${brl(p.price)}</span></span>
+        <li><span class="cart-art ${TONE[p.cat] || "leaf"}">${icon(p, 40)}</span><span class="cart-info"><b>${esc(p.name)}</b><span class="muted">${brl(p.price)}</span></span>
         <button class="btn btn-ghost btn-sm" type="button" data-add="${p.id}">Adicionar</button></li>`; }).join("")}
       </ul>`;
   }
