@@ -12,23 +12,48 @@
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(h));
   }
-  const curated = window.TRAILS.map((t) => ({ ...t, source: "curadoria" }));
-  const osm = (window.OSM_TRAILS || [])
-    .filter((o) => !curated.some((c) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w))))
-    .map((o) => ({ elevation: null, desc: "", tags: [], ...o, source: "osm" }));
-  const TRAILS = curated.concat(osm);
-  Object.values(state.knownTrails || {}).forEach((t) => { if (!TRAILS.some((x) => x.id === t.id)) TRAILS.push(t); });
-  const trailById = Object.fromEntries(TRAILS.map((t) => [t.id, t]));
   const STATE_NAMES = Object.fromEntries(window.BRAZIL_GEO.states.map((s) => [s.uf, s.name]));
+  const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
+
+  // Toda trilha passa por aqui antes de ser usada: dados do OpenStreetMap, da busca ao vivo e do
+  // navegador (localStorage) são externos. Campos inválidos descartam a trilha ou viram um valor seguro.
+  const finite = (v, min, max) => Number.isFinite(v) && v >= min && v <= max;
+  const text = (v, max) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  function cleanTrail(t, source) {
+    if (!t || typeof t !== "object") return null;
+    const id = typeof t.id === "string" && /^[a-z0-9-]{1,60}$/.test(t.id) ? t.id : null;
+    const name = text(t.name, 140), city = text(t.city, 80);
+    if (!id || !name || !city || !STATE_NAMES[t.uf] || !finite(t.lat, -35, 6) || !finite(t.lng, -75, -28) || !finite(t.km, 0.05, 2000)) return null;
+    return {
+      id, name, city, uf: t.uf, lat: t.lat, lng: t.lng, km: t.km,
+      hours: finite(t.hours, 0.1, 500) ? t.hours : Math.max(0.5, Math.round((t.km / 3) * 2) / 2),
+      difficulty: DIFF_CLASS[t.difficulty] ? t.difficulty : "Moderada",
+      elevation: finite(t.elevation, 1, 9000) ? Math.round(t.elevation) : null,
+      tags: Array.isArray(t.tags) ? t.tags.filter((x) => typeof x === "string").slice(0, 3).map((x) => x.slice(0, 24)) : [],
+      desc: text(t.desc, 400),
+      operator: text(t.operator, 80),
+      osm: typeof t.osm === "string" && /^(way|relation|node)\/\d{1,12}$/.test(t.osm) ? t.osm : "",
+      diffEstimated: !!t.diffEstimated,
+      source,
+    };
+  }
+  const sameTrail = (c, o) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w));
+  const curated = window.TRAILS.map((t) => cleanTrail(t, "curadoria")).filter(Boolean);
+  const osm = (window.OSM_TRAILS || []).map((t) => cleanTrail(t, "osm")).filter((o) => o && !curated.some((c) => sameTrail(c, o)));
+  const TRAILS = curated.concat(osm);
+  const trailById = Object.create(null);
+  TRAILS.forEach((t) => { trailById[t.id] = t; });
+  Object.values(state.knownTrails).forEach((raw) => {
+    const t = cleanTrail(raw, "osm");
+    if (t && !trailById[t.id]) { TRAILS.push(t); trailById[t.id] = t; }
+  });
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const num = (n) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
   const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
-  const todayISO = () => new Date().toISOString().slice(0, 10);
-
-  const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
+  const todayISO = () => window.Store.localISO();
 
   // ---------- Página sem zoom (o zoom fica só dentro do mapa) ----------
   document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
@@ -390,9 +415,7 @@
   }
 
   function addTrails(list) {
-    const fresh = list.filter((o) => !trailById[o.id]
-      && !curated.some((c) => hav(c, o) < 2 && words(c.name).some((w) => words(o.name).includes(w))))
-      .map((o) => ({ elevation: null, desc: "", tags: [], ...o, source: "osm" }));
+    const fresh = list.map((o) => cleanTrail(o, "osm")).filter((o) => o && !trailById[o.id] && !curated.some((c) => sameTrail(c, o)));
     fresh.forEach((t) => { TRAILS.push(t); trailById[t.id] = t; });
     if (fresh.length) {
       mapView?.addTrails(fresh);
@@ -507,7 +530,8 @@
     } else if (e.key === "Enter" && !acList.hidden && acIndex >= 0) {
       e.preventDefault();
       acChoose(acItems[acIndex]);
-    } else if (e.key === "Escape") {
+    } else if (e.key === "Escape" && !acList.hidden) {
+      e.preventDefault(); // no campo de busca, o Esc do navegador apagaria o texto e reabriria a lista
       acOpen(false);
     }
   });
@@ -534,7 +558,7 @@
   $("#clearFilters").addEventListener("click", () => {
     $("#difficulty").value = ""; $("#nameFilter").value = ""; $("#cityFilter").value = "";
     origin = null; $("#locStatus").textContent = ""; $("#cityInput").value = "";
-    initMap();
+    mapView?.clearOrigin();
     setStateFilter("");
   });
 
@@ -548,6 +572,7 @@
 
   function openTrail(id) {
     const t = trailById[id];
+    if (!t) { toast("Essa trilha não está mais no catálogo."); return; }
     const today = todayISO();
     const evs = state.events.filter((e) => e.trailId === id && e.date >= today).sort(byDate);
     const dist = origin ? `<span>${num(Math.round(distanceKm(origin, t)))} km de ${esc(origin.label)}</span>` : "";
@@ -571,12 +596,12 @@
           <div><dt>Ganho de elevação</dt><dd>${t.elevation ? `${num(t.elevation)} m` : "—"}</dd></div>
           <div><dt>Duração ${t.source === "osm" ? "estimada" : "média"}</dt><dd>${duration(t.hours)}</dd></div>
         </dl>
-        ${t.source === "osm" ? `<p class="source-note">Traçado mapeado por voluntários no <a href="https://www.openstreetmap.org/${t.osm}" target="_blank" rel="noopener">OpenStreetMap</a>.${t.diffEstimated ? " Dificuldade estimada pela distância." : ""}${t.operator ? ` Gestão: ${esc(t.operator)}.` : ""} Confira as condições antes de ir.</p>` : ""}
+        ${t.source === "osm" && t.osm ? `<p class="source-note">Traçado mapeado por voluntários no <a href="https://www.openstreetmap.org/${t.osm}" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>.${t.diffEstimated ? " Dificuldade estimada pela distância." : ""}${t.operator ? ` Gestão: ${esc(t.operator)}.` : ""} Confira as condições antes de ir.</p>` : ""}
         <h3>Próximas saídas</h3>
         ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li><b>${fmtDate(e.date)}</b> às ${esc(e.time)} · ${e.attendees.length}/${e.slots} pessoas · com ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted">Nenhuma saída agendada. Agende a primeira.</p>'}
         ${trailGear(t)}
         <div class="actions">
-          <a class="btn btn-ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${t.lat},${t.lng}">Como chegar</a>
+          <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/dir/?api=1&amp;destination=${t.lat},${t.lng}">Como chegar</a>
           <button class="btn btn-ghost" type="button" data-close>Fechar</button>
           <button class="btn" type="button" data-schedule>Agendar esta trilha</button>
         </div>
@@ -623,9 +648,9 @@
       const left = e.slots - e.attendees.length;
       let action = "";
       if (!past) {
-        if (isHost) action = `<button class="btn btn-ghost btn-sm danger" data-act="cancel" data-id="${e.id}">Cancelar saída</button>`;
-        else if (joined) action = `<button class="btn btn-ghost btn-sm" data-act="leave" data-id="${e.id}">Desistir</button>`;
-        else action = `<button class="btn btn-sm" data-act="join" data-id="${e.id}" ${full ? "disabled" : ""}>${full ? "Lotado" : "Participar"}</button>`;
+        if (isHost) action = `<button class="btn btn-ghost btn-sm danger" data-act="cancel" data-id="${esc(e.id)}">Cancelar saída</button>`;
+        else if (joined) action = `<button class="btn btn-ghost btn-sm" data-act="leave" data-id="${esc(e.id)}">Desistir</button>`;
+        else action = `<button class="btn btn-sm" data-act="join" data-id="${esc(e.id)}" ${full ? "disabled" : ""}>${full ? "Lotado" : "Participar"}</button>`;
       }
       return `
       <li class="event${past ? " past" : ""}">
@@ -663,6 +688,7 @@
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
     const ev = state.events.find((x) => x.id === btn.dataset.id);
+    if (!ev) return;
     requireUser(async () => {
       const name = me();
       if (btn.dataset.act === "join" && !ev.attendees.includes(name) && ev.attendees.length < ev.slots) {
@@ -701,9 +727,9 @@
       trailId: $("#evTrail").value,
       date: $("#evDate").value,
       time: $("#evTime").value,
-      slots: Math.max(2, +$("#evSlots").value || 2),
-      meet: $("#evMeet").value.trim(),
-      desc: $("#evDesc").value.trim(),
+      slots: Math.min(50, Math.max(2, Math.round(+$("#evSlots").value) || 2)),
+      meet: $("#evMeet").value.trim().slice(0, 120),
+      desc: $("#evDesc").value.trim().slice(0, 500),
       host: name,
       attendees: [name],
     });
@@ -732,7 +758,7 @@
       const t = p.trailId ? trailById[p.trailId] : null;
       const liked = name && p.likes.includes(name);
       return `
-      <li class="post" data-id="${p.id}">
+      <li class="post" data-id="${esc(p.id)}">
         <div class="post-head">
           <span class="av">${esc(p.author[0].toUpperCase())}</span>
           <div class="post-who">
@@ -762,7 +788,7 @@
   $("#postForm").addEventListener("submit", (e) => {
     e.preventDefault();
     requireUser(() => {
-      const text = $("#postText").value.trim();
+      const text = $("#postText").value.trim().slice(0, 1000);
       if (!text) return;
       rememberTrail($("#postTrail").value);
       state.posts.push({ id: uid(), author: me(), trailId: $("#postTrail").value, text, at: Date.now(), likes: [], comments: [] });
@@ -779,6 +805,7 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const post = state.posts.find((p) => p.id === btn.closest(".post").dataset.id);
+    if (!post) return;
     requireUser(async () => {
       const name = me();
       if (btn.dataset.act === "like") {
@@ -799,8 +826,9 @@
     e.preventDefault();
     const input = $("input", form);
     const post = state.posts.find((p) => p.id === form.closest(".post").dataset.id);
+    if (!post) return;
     requireUser(() => {
-      const text = input.value.trim();
+      const text = input.value.trim().slice(0, 300);
       if (!text) return;
       post.comments.push({ author: me(), text, at: Date.now() });
       save(); renderFeed();
@@ -811,6 +839,8 @@
   const PRODUCTS = window.SHOP_PRODUCTS;
   const productById = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
   const RULES = window.SHOP_RULES;
+  // produtos que saíram do catálogo não ficam no carrinho
+  state.cart = state.cart.filter((i) => productById[i.id]);
   const brl = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   // Ilustrações cartoon (js/shop-art.js); os brilhinhos só aparecem na vitrine.
   const icon = (p, size = 64, sparks = false) => `<svg class="toon" viewBox="0 0 120 120" width="${size}" height="${size}" aria-hidden="true"><g stroke="${window.SHOP_ART_INK}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round">${window.SHOP_ART[p.icon]}${sparks ? window.SHOP_SPARKS : ""}</g></svg>`;
@@ -929,7 +959,7 @@
         ${orders.length ? `
           <section class="orders">
             <h3>Seus pedidos</h3>
-            <ul>${orders.map((o) => `<li><b>${o.id}</b> · ${new Date(o.at).toLocaleDateString("pt-BR")} · ${plural(o.items.reduce((n, i) => n + i.qty, 0), "item", "itens")} · ${brl(o.total)} <span class="tag-reserva">Reserva · ${esc(o.payment)}</span></li>`).join("")}</ul>
+            <ul>${orders.map((o) => `<li><b>${esc(o.id)}</b> · ${new Date(o.at).toLocaleDateString("pt-BR")} · ${plural(o.items.reduce((n, i) => n + i.qty, 0), "item", "itens")} · ${brl(o.total)} <span class="tag-reserva">Reserva · ${esc(o.payment)}</span></li>`).join("")}</ul>
           </section>` : ""}
       </div>`;
   }
@@ -941,6 +971,7 @@
     const row = e.target.closest(".cart-item");
     if (!row) return;
     const item = state.cart.find((i) => i.id === row.dataset.id);
+    if (!item) return;
     const step = e.target.closest("[data-qty]");
     if (step) item.qty = Math.max(1, Math.min(10, item.qty + +step.dataset.qty));
     if (e.target.closest("[data-remove]")) state.cart = state.cart.filter((i) => i !== item);
@@ -983,6 +1014,7 @@
   });
 
   $("#checkoutForm").addEventListener("submit", () => {
+    if (!state.cart.length) { renderCartBadge(); toast("Seu carrinho está vazio."); return; }
     updateCheckoutSummary();
     const t = checkoutTotals;
     const order = {

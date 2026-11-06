@@ -30,10 +30,25 @@ js/trails-osm.js trilhas do OpenStreetMap (gerado por tools/fetch-osm-trails.py)
 js/municipios.js 5.570 municípios do IBGE para a busca (gerado por tools/build-municipios.py)
 data/municipios.csv base de municípios (IBGE, via kelvins/municipios-brasileiros, MIT)
 js/brazil-geo.js contornos dos estados (gerado por tools/build-geo.py)
-js/map.js       mapa SVG com zoom/arraste
-js/store.js     persistência (localStorage) + dados iniciais
-js/app.js       lógica: mapa, busca por proximidade, agenda, comunidade
+js/map.js       mapa SVG com zoom/arraste, ficha ao passar o mouse
+js/fx.js        paisagens geradas por trilha, curvas de nível, contadores e animações
+js/shop.js      catálogo da loja; js/shop-art.js ilustrações cartoon dos produtos
+js/osm-live.js  busca ao vivo no OpenStreetMap (só quando js/trails-osm.js está vazio)
+js/store.js     persistência (localStorage) com validação + dados iniciais
+js/app.js       lógica: lista, filtros, agenda, comunidade, loja
 ```
+
+## Segurança
+
+- Todo texto vindo de fora (OpenStreetMap, o que o usuário digita, dados salvos no navegador) é escapado antes
+  de entrar no HTML. Trilhas passam por `cleanTrail` (id, sigla, coordenadas, números e link do OSM validados)
+  e o `localStorage` é validado e limitado em `store.js`; dados corrompidos ou adulterados são descartados.
+- `index.html` tem Content-Security-Policy: só scripts do próprio site, conexões apenas para as fontes e os
+  serviços do OpenStreetMap. Links externos usam `noopener noreferrer`.
+- O checkout não pede dados de cartão e não guarda e-mail nem endereço no navegador.
+- Limitações conhecidas: não há login (o "perfil" é só um nome salvo no navegador) e os dados ficam em cada
+  navegador. Antes de ligar um back-end compartilhado é preciso autenticação, validação no servidor e
+  moderação. O bloqueio de zoom da página foi pedido no projeto, mas dificulta a leitura para quem precisa ampliar.
 
 ## Próximos passos
 

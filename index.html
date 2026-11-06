@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Pumping Life Trilhas</title>
   <meta name="description" content="Encontre trilhas perto de você, agende saídas em grupo e participe da comunidade." />
+  <!-- Só carrega scripts do próprio site; conexões externas apenas para fontes e dados do OpenStreetMap. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://overpass-api.de https://overpass.kumi.systems https://maps.mail.ru https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800;900&family=Overpass+Mono:wght@500;600&display=swap" />
@@ -141,7 +144,7 @@
         <div class="feed-col">
           <form id="postForm" class="post-form">
             <label for="postText" class="sr-only">Nova publicação</label>
-            <textarea id="postText" rows="3" placeholder="Como foi sua última trilha? Peça dicas ou chame a galera." required></textarea>
+            <textarea id="postText" rows="3" maxlength="1000" placeholder="Como foi sua última trilha? Peça dicas ou chame a galera." required></textarea>
             <div class="post-form-row">
               <select id="postTrail" aria-label="Marcar uma trilha"><option value="">Marcar uma trilha (opcional)</option></select>
               <button class="btn" type="submit">Publicar</button>
@@ -186,7 +189,7 @@
   </main>
 
   <footer class="footer">
-    <p>Pumping Life · Trilhas: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© colaboradores do OpenStreetMap</a> e curadoria própria · Municípios: IBGE · Mapa: Natural Earth · Distâncias em linha reta.</p>
+    <p>Pumping Life · Trilhas: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© colaboradores do OpenStreetMap</a> e curadoria própria · Municípios: IBGE · Mapa: Natural Earth · Distâncias em linha reta.</p>
   </footer>
 
   <!-- Modal: trilha -->
@@ -204,11 +207,11 @@
         <label>Horário <input id="evTime" type="time" value="07:00" required /></label>
       </div>
       <div class="row">
-        <label>Vagas <input id="evSlots" type="number" min="2" max="50" value="10" required /></label>
-        <label>Ponto de encontro <input id="evMeet" type="text" placeholder="Ex.: portaria do parque" required /></label>
+        <label>Vagas <input id="evSlots" type="number" min="2" max="50" step="1" value="10" required /></label>
+        <label>Ponto de encontro <input id="evMeet" type="text" maxlength="120" placeholder="Ex.: portaria do parque" required /></label>
       </div>
       <label>Descrição
-        <textarea id="evDesc" rows="3" placeholder="Ritmo, o que levar, carona…"></textarea>
+        <textarea id="evDesc" rows="3" maxlength="500" placeholder="Ritmo, o que levar, carona…"></textarea>
       </label>
       <div class="actions">
         <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
@@ -253,11 +256,11 @@
         <legend>Entrega</legend>
         <label>Nome completo <input id="coName" type="text" autocomplete="name" required maxlength="80" /></label>
         <div class="row">
-          <label>E-mail <input id="coEmail" type="email" autocomplete="email" required /></label>
+          <label>E-mail <input id="coEmail" type="email" autocomplete="email" maxlength="120" required /></label>
           <label>CEP <input id="coCep" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" pattern="\d{5}-\d{3}" required /></label>
         </div>
-        <label>Endereço <input id="coAddress" type="text" autocomplete="street-address" placeholder="Rua, número e complemento" required /></label>
-        <label>Cidade <input id="coCity" type="text" autocomplete="address-level2" placeholder="Ex.: Campinas, SP" required /></label>
+        <label>Endereço <input id="coAddress" type="text" autocomplete="street-address" maxlength="150" placeholder="Rua, número e complemento" required /></label>
+        <label>Cidade <input id="coCity" type="text" autocomplete="address-level2" maxlength="80" placeholder="Ex.: Campinas, SP" required /></label>
       </fieldset>
       <fieldset>
         <legend>Frete</legend>

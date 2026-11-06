@@ -49,7 +49,7 @@
     function addPin(t) {
       if (pins[t.id]) return;
       const [x, y] = proj(t.lat, t.lng);
-      const g = el("g", { class: `pin pin-${opts.diffClass[t.difficulty]}`, tabindex: "0", role: "button", "aria-label": `${t.name}, ${t.city}` }, layer);
+      const g = el("g", { class: `pin pin-${opts.diffClass[t.difficulty]}` }, layer);
       el("title", {}, g).textContent = `${t.name} — ${t.city}, ${t.uf}`;
       g.style.setProperty("--d", `${(Object.keys(pins).length % 80) * 12}ms`);
       const mark = el("rect", {}, g);
@@ -59,7 +59,6 @@
       g.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") showCard(t, e); });
       g.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") moveCard(e); });
       g.addEventListener("pointerleave", hideCard);
-      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onPick(t.id); } });
       pins[t.id] = { g, mark, label, x, y, on: true };
     }
     trails.forEach(addPin);
@@ -254,6 +253,11 @@
         fitBox(ring.getBBox(), 1.15);
       },
       setRadius(r) { radiusKm = r; draw(); },
+      clearOrigin() {
+        origin = null;
+        [ring, you, youPulse].forEach((n) => n.setAttribute("visibility", "hidden"));
+        animateTo({ ...HOME });
+      },
       selectState(uf) {
         Object.entries(stateEls).forEach(([k, p]) => p.classList.toggle("selected", k === uf));
         statesG.classList.toggle("has-selection", !!uf);
