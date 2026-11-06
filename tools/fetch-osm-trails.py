@@ -8,7 +8,12 @@ Para cada trilha o script calcula a distância pela geometria, escolhe um ponto 
 sobre o traçado, descobre o estado (pelo contorno dos estados) e a cidade (sede municipal mais
 próxima dentro do estado, base do IBGE em data/municipios.csv).
 
-Uso (precisa de acesso a overpass-api.de):
+Fontes (escolha com --source):
+  qlever   (padrão) consultas SPARQL sobre o OSM inteiro, da Univ. de Freiburg (qlever.dev). Também informa
+           em quais municípios cada trilha está (código IBGE), o que dá a cidade exata.
+  overpass a API Overpass (overpass-api.de); alguns servidores recusam conexões vindas de nuvem.
+
+Uso:
   python3 tools/fetch-osm-trails.py > js/trails-osm.js
   python3 tools/fetch-osm-trails.py --save-raw osm.json > js/trails-osm.js   # guarda a resposta bruta
   python3 tools/fetch-osm-trails.py --input osm.json > js/trails-osm.js      # reprocessa sem baixar
@@ -56,6 +61,12 @@ KEYWORDS = [
     ("lagoa", "lagoa"), ("rio ", "rio"), ("gruta", "gruta"), ("canyon", "cânion"), ("cânion", "cânion"), ("parque", "parque"),
 ]
 
+MIN_KM = 0.4
+# Nomes que descrevem um tipo de caminho e não identificam uma trilha.
+GENERIC = re.compile(
+    r"^(acesso\b|trilha( de| da)? (liga[cç][aã]o|caminhada|alternativa|desconhecida|ecol[oó]gica|secund[aá]ria|principal|interna|"
+    r"sem nome|particular|privada|de servi[cç]o|interpretativa|suspensa|nova|velha|antiga)\b|trilha$|caminho$|[a-z]?\s?\d+$)",
+    re.I)
 COS = math.cos(math.radians(15))
 LNG0, LAT0 = -76.0, 7.0  # mesma projeção de js/map.js e tools/build-geo.py
 
@@ -76,6 +87,119 @@ def fetch(query):
                 print(f"  falhou: {e}", file=sys.stderr)
                 time.sleep(5 * (attempt + 1))
     raise SystemExit(f"Nenhum servidor Overpass respondeu: {last}")
+
+
+# ---------------------------------------------------------------- QLever
+QLEVER_URL = "https://qlever.dev/api/osm-planet"
+PREFIXES = """PREFIX osmrel: <https://www.openstreetmap.org/relation/>
+PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:>
+PREFIX ogc: <http://www.opengis.net/rdf#>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+PREFIX osm2rdf: <https://osm2rdf.cs.uni-freiburg.de/rdf#>
+"""
+TAGS = ["name:pt", "sac_scale", "distance", "ascent", "duration", "description", "description:pt", "operator", "highway", "route"]
+
+# Rotas (relações) de caminhada que tocam o Brasil. route=foot só entra com nome de trilha/caminho.
+Q_ROUTES = """SELECT ?el ?name ?route ?wkt WHERE {
+  osmrel:59470 ogc:sfIntersects ?el .
+  ?el osmkey:type "route" ; osmkey:route ?route ; osmkey:name ?name .
+  FILTER(?route = "hiking" || (?route = "foot" && REGEX(?name, "(trilha|caminho|travessia|circuito|rota|passos|peregrin)", "i")))
+  ?el geo:hasGeometry/geo:asWKT ?wkt .
+}"""
+# Caminhos com nome de trilha, e trilhas com escala de dificuldade (sac_scale), dentro do Brasil.
+WAY_FILTER = """osmrel:59470 ogc:sfContains ?el .
+  ?el osmkey:highway ?hw ; osmkey:name ?name .
+  OPTIONAL { ?el osmkey:sac_scale ?sac }
+  FILTER(
+    (?hw IN ("path", "footway", "bridleway", "track") && REGEX(?name, "^(trilha|travessia) ", "i"))
+    || (?hw = "path" && REGEX(?name, "^caminho ", "i"))
+    || (?hw = "path" && BOUND(?sac))
+  )"""
+Q_WAYS = "SELECT ?el ?name ?len ?wkt WHERE {\n  " + WAY_FILTER + "\n  ?el osm2rdf:length ?len ; geo:hasGeometry/geo:asWKT ?wkt .\n}"
+Q_WAY_CITIES = "SELECT ?el ?ibge WHERE {\n  " + WAY_FILTER + """
+  ?el ogc:sfIntersects ?m . ?m osmkey:admin_level "8" ; osmkey:IBGE:GEOCODIGO ?ibge .
+}"""
+Q_ROUTE_CITIES = """SELECT ?el ?ibge WHERE {
+  osmrel:59470 ogc:sfIntersects ?el .
+  ?el osmkey:type "route" ; osmkey:route ?route .
+  FILTER(?route IN ("hiking", "foot"))
+  ?el ogc:sfIntersects ?m . ?m osmkey:admin_level "8" ; osmkey:IBGE:GEOCODIGO ?ibge .
+}"""
+
+
+def tags_query(kind):
+    sel = " ".join(f"?t{i}" for i in range(len(TAGS)))
+    opt = "\n".join(f'  OPTIONAL {{ ?el osmkey:{t} ?t{i} }}' for i, t in enumerate(TAGS))
+    base = WAY_FILTER if kind == "way" else 'osmrel:59470 ogc:sfIntersects ?el . ?el osmkey:type "route" ; osmkey:route ?route . FILTER(?route IN ("hiking", "foot"))'
+    return f"SELECT ?el {sel} WHERE {{\n  {base}\n{opt}\n}}"
+
+
+def sparql(query):
+    data = urllib.parse.urlencode({"query": PREFIXES + query}).encode()
+    last = None
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(QLEVER_URL, data=data, headers={
+                "Accept": "application/sparql-results+json", "User-Agent": "pumping-life-trails/1.0"})
+            with urllib.request.urlopen(req, timeout=600) as r:
+                return json.load(r)["results"]["bindings"]
+        except Exception as e:  # noqa: BLE001
+            last = e
+            print(f"  QLever falhou ({e}); nova tentativa…", file=sys.stderr)
+            time.sleep(5 * (attempt + 1))
+    raise SystemExit(f"QLever não respondeu: {last}")
+
+
+def wkt_lines(wkt):
+    """Todas as sequências de coordenadas de um WKT (LINESTRING, MULTI*, GEOMETRYCOLLECTION)."""
+    lines = []
+    for grp in re.findall(r"\(([^()]+)\)", wkt):
+        pts = []
+        for pair in grp.split(","):
+            xy = pair.split()
+            if len(xy) >= 2:
+                pts.append({"lat": float(xy[1]), "lon": float(xy[0])})
+        if len(pts) >= 2:
+            lines.append(pts)
+    return lines
+
+
+def fetch_qlever():
+    """Monta uma resposta no mesmo formato da Overpass, com extras _len_km e _ibge."""
+    def osm_id(uri):
+        kind, num = uri.rsplit("/", 2)[-2:]
+        return kind, int(num)
+
+    elements = {}
+    print("QLever: rotas de caminhada…", file=sys.stderr)
+    for b in sparql(Q_ROUTES):
+        kind, i = osm_id(b["el"]["value"])
+        el = elements.setdefault((kind, i), {"type": kind, "id": i, "tags": {"name": b["name"]["value"], "route": b["route"]["value"]}, "members": []})
+        el["members"] += [{"type": "way", "ref": 0, "role": "", "geometry": ln} for ln in wkt_lines(b["wkt"]["value"])]
+    print("QLever: caminhos com nome de trilha…", file=sys.stderr)
+    for b in sparql(Q_WAYS):
+        kind, i = osm_id(b["el"]["value"])
+        lines = wkt_lines(b["wkt"]["value"])
+        if not lines:
+            continue
+        elements[(kind, i)] = {"type": kind, "id": i, "tags": {"name": b["name"]["value"]}, "geometry": lines[0],
+                               "_len_km": float(b["len"]["value"]) / 1000}
+    print("QLever: etiquetas (dificuldade, descrição…)…", file=sys.stderr)
+    for kind in ("relation", "way"):
+        for b in sparql(tags_query("way" if kind == "way" else "route")):
+            key = osm_id(b["el"]["value"])
+            if key in elements:
+                for n, t in enumerate(TAGS):
+                    if f"t{n}" in b:
+                        elements[key]["tags"].setdefault(t, b[f"t{n}"]["value"])
+    print("QLever: municípios de cada trilha…", file=sys.stderr)
+    for q in (Q_ROUTE_CITIES, Q_WAY_CITIES):
+        for b in sparql(q):
+            key = osm_id(b["el"]["value"])
+            if key in elements:
+                elements[key].setdefault("_ibge", []).append(b["ibge"]["value"])
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return {"osm3s": {"timestamp_osm_base": stamp, "source": "qlever"}, "elements": list(elements.values())}
 
 
 # ---------------------------------------------------------------- geometria
@@ -147,13 +271,13 @@ def state_of(lat, lng, states):
 
 
 def load_cities(path="data/municipios.csv"):
-    by_uf = {}
-    allc = []
+    by_uf, allc, by_code = {}, [], {}
     for r in csv.DictReader(open(path, encoding="utf-8")):
         c = (r["nome"], r["uf"], float(r["latitude"]), float(r["longitude"]))
         by_uf.setdefault(r["uf"], []).append(c)
         allc.append(c)
-    return by_uf, allc
+        by_code[r["codigo_ibge"]] = c
+    return by_uf, allc, by_code
 
 
 def nearest_city(lat, lng, uf, by_uf, allc):
@@ -205,11 +329,24 @@ def keywords(name):
 # ---------------------------------------------------------------- processamento
 def process(raw):
     states = load_states()
-    by_uf, allc = load_cities()
+    by_uf, allc, by_code = load_cities()
     elements = raw.get("elements", [])
 
     # caminhos que já fazem parte de uma rota não entram de novo sozinhos
     in_routes = {m["ref"] for el in elements if el["type"] == "relation" for m in el.get("members", []) if m.get("type") == "way"}
+    # (sem os ids dos membros, como no QLever: compara o traçado — células de ~110 m)
+    cell = lambda lat, lon: (round(lat * 900), round(lon * 900))
+    route_cells = set()
+    for el in elements:
+        if el["type"] == "relation":
+            for ln in lines_of(el):
+                for la, lo in ln:
+                    cx, cy = cell(la, lo)
+                    route_cells.update((cx + dx, cy + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+
+    def inside_route(lines):
+        pts = [p for ln in lines for p in ln]
+        return bool(route_cells) and sum(cell(*p) in route_cells for p in pts) >= 0.6 * len(pts)
 
     candidates = []
     for el in elements:
@@ -222,28 +359,59 @@ def process(raw):
         lines = [ln for ln in lines_of(el) if len(ln) >= 2]
         if not lines:
             continue
-        km = number(tags.get("distance")) or length_km(lines)
-        if km < 0.3 or km > 1500:
+        if el["type"] == "way" and inside_route(lines):
+            continue
+        km = number(tags.get("distance")) or el.get("_len_km") or length_km(lines)
+        if km > 1500:
             continue
         lat, lng = anchor(lines)
+        if re.match(r"^(rua|avenida|travessa|estrada|rodovia)\b", name, re.I) or GENERIC.search(name):
+            continue  # vias urbanas, estradas e nomes genéricos que não identificam uma trilha
         candidates.append({"el": el, "tags": tags, "name": clean_name(name), "km": km, "lat": lat, "lng": lng})
 
-    # Caminhos com o mesmo nome e próximos (um trecho por "way" no OSM) viram uma trilha só.
+    # Trechos com o mesmo nome encadeados (cada um a menos de 4 km de outro do grupo) são uma trilha só.
+    # Se o grupo tem uma rota (relação), fica a rota; senão os trechos somam a distância.
+    by_name = {}
+    for c in candidates:
+        by_name.setdefault(c["name"].lower(), []).append(c)
     merged = []
-    for c in sorted(candidates, key=lambda c: (c["el"]["type"] != "relation", c["name"].lower())):
-        twin = next((m for m in merged if m["name"].lower() == c["name"].lower() and hav((m["lat"], m["lng"]), (c["lat"], c["lng"])) < 3), None)
-        if twin and c["el"]["type"] == "way":
-            if twin["el"]["type"] == "way":
-                twin["km"] += c["km"]
-            continue
-        merged.append(c)
+    for group in by_name.values():
+        parent = list(range(len(group)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                if hav((group[i]["lat"], group[i]["lng"]), (group[j]["lat"], group[j]["lng"])) < 4:
+                    parent[find(i)] = find(j)
+        clusters = {}
+        for i, c in enumerate(group):
+            clusters.setdefault(find(i), []).append(c)
+        for cl in clusters.values():
+            rel = [c for c in cl if c["el"]["type"] == "relation"]
+            if rel:
+                merged.append(max(rel, key=lambda c: c["km"]))
+                continue
+            main = max(cl, key=lambda c: c["km"])
+            main = dict(main, km=sum(c["km"] for c in cl))
+            merged.append(main)
+    merged = [c for c in merged if c["km"] >= MIN_KM]
 
     out = []
     for c in merged:
-        uf = state_of(c["lat"], c["lng"], states)
-        if not uf:
-            continue  # fora do território (fronteira imprecisa ou mar)
-        city = nearest_city(c["lat"], c["lng"], uf, by_uf, allc)
+        # Cidade: entre os municípios que a trilha cruza (IBGE), o de sede mais próxima do ponto de referência.
+        known = [by_code[x] for x in set(c["el"].get("_ibge", [])) if x in by_code]
+        if known:
+            city = min(known, key=lambda m: (m[2] - c["lat"]) ** 2 + ((m[3] - c["lng"]) * math.cos(math.radians(c["lat"]))) ** 2)
+            uf = city[1]
+        else:
+            uf = state_of(c["lat"], c["lng"], states)
+            if not uf:
+                continue  # fora do território (fronteira imprecisa ou mar)
+            city = nearest_city(c["lat"], c["lng"], uf, by_uf, allc)
         tags = c["tags"]
         diff, estimated = difficulty(tags, c["km"])
         el = c["el"]
@@ -278,11 +446,15 @@ def process(raw):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", help="usar uma resposta do Overpass já salva em vez de baixar")
+    ap.add_argument("--source", choices=["qlever", "overpass"], default="qlever")
+    ap.add_argument("--input", help="usar uma resposta já salva (--save-raw) em vez de baixar")
     ap.add_argument("--save-raw", help="salvar a resposta bruta do Overpass neste arquivo")
     args = ap.parse_args()
 
-    raw = json.load(open(args.input, encoding="utf-8")) if args.input else fetch(QUERY)
+    if args.input:
+        raw = json.load(open(args.input, encoding="utf-8"))
+    else:
+        raw = fetch_qlever() if args.source == "qlever" else fetch(QUERY)
     if args.save_raw:
         json.dump(raw, open(args.save_raw, "w", encoding="utf-8"))
     trails = process(raw)

@@ -56,7 +56,8 @@ Para cada uma o script calcula a distância pelo traçado e descobre estado e ci
 python3 tools/fetch-osm-trails.py --save-raw osm.json > js/trails-osm.js
 ```
 
-Precisa de acesso a `overpass-api.de` e leva alguns minutos. Rode de novo de tempos em tempos para atualizar.
+Por padrão usa o QLever (`qlever.dev`, consultas sobre o OSM inteiro) e leva cerca de 1 minuto; `--source overpass` usa a API Overpass.
+Nomes genéricos ("Trilha de ligação", "Acesso…") e trechos com menos de 400 m são descartados, e trechos de uma mesma trilha são unidos. Rode de novo de tempos em tempos para atualizar.
 
 Enquanto `js/trails-osm.js` estiver vazio, o site busca as trilhas direto no OpenStreetMap pelo navegador do
 visitante (`js/osm-live.js`): ao escolher uma cidade (raio de até 80 km) ou um estado. O resultado fica em cache

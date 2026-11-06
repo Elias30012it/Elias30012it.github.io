@@ -477,6 +477,7 @@
     if (origin) mapView?.setRadius(+$("#radius").value);
     renderTrails();
   });
+  $("#radius").addEventListener("change", () => { if (origin) mapView?.setOrigin(origin, +$("#radius").value); });
   $("#stateFilter").addEventListener("change", () => setStateFilter($("#stateFilter").value));
   $("#cityFilter").addEventListener("change", () => {
     const v = $("#cityFilter").value;
@@ -968,6 +969,11 @@
     fillTrailSelects();
     fillStateFilter();
     fillCityFilter();
+  }
+
+  if (window.OSM_TRAILS_DATE) {
+    const d = new Date(window.OSM_TRAILS_DATE);
+    if (!isNaN(d)) $(".footer p").insertAdjacentHTML("beforeend", ` Trilhas do OpenStreetMap atualizadas em ${d.toLocaleDateString("pt-BR")}.`);
   }
 
   function renderAll() { renderStats(); renderTrails(); renderEvents(); renderFeed(); renderShop(); renderCartBadge(); }
