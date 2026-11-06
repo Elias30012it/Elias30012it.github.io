@@ -107,6 +107,7 @@
     const tab = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "explorar";
     VIEWS.forEach((v) => { $(`#view-${v}`).hidden = v !== tab; });
     $$(".tabs a").forEach((a) => a.toggleAttribute("aria-current", a.dataset.tab === tab));
+    window.FX.tabIndicator($(".tabs"));
     if (tab === "explorar") setTimeout(() => mapView?.refresh(), 0);
   }
   window.addEventListener("hashchange", route);
@@ -229,10 +230,11 @@
     }).sort(origin ? (a, b) => a.near - b.near : (a, b) => b.count - a.count || STATE_NAMES[a.uf].localeCompare(STATE_NAMES[b.uf]));
   }
 
+  let rowIdx = 0;
   function trailRow(t) {
     const n = upcomingCount(t.id);
     return `
-      <li>
+      <li style="--i:${Math.min(rowIdx++, 24)}">
         <button class="trail" type="button" data-id="${t.id}">
           <i class="blaze ${DIFF_CLASS[t.difficulty]}" title="${t.difficulty}"></i>
           <span class="trail-main">
@@ -272,6 +274,7 @@
     $("#clearFilters").hidden = !filtered;
 
     let budget = shown;
+    rowIdx = 0;
     const groups = groupTrails(list).map((g) => {
       const cities = [];
       for (const c of g.cities) {
@@ -307,8 +310,62 @@
     const ufs = new Set(TRAILS.map((t) => t.uf)).size;
     const cities = new Set(TRAILS.map((t) => `${t.city}|${t.uf}`)).size;
     const upcoming = state.events.filter((e) => e.date >= todayISO()).length;
-    $("#catalogStats").innerHTML = `<span><b>${num(TRAILS.length)}</b> trilhas</span><span><b>${num(cities)}</b> cidades</span><span><b>${ufs}</b> estados</span><span><b>${upcoming}</b> saídas agendadas</span>`;
+    const first = !renderStats.done;
+    const n = (v) => first ? `<b data-count="${v}">0</b>` : `<b>${num(v)}</b>`;
+    $("#catalogStats").innerHTML = `<span>${n(TRAILS.length)} trilhas</span><span>${n(cities)} cidades</span><span>${n(ufs)} estados</span><span>${n(upcoming)} saídas agendadas</span>`;
+    if (first) { renderStats.done = true; window.FX.countUp($("#catalogStats")); }
   }
+
+  // ---------- Destaques: trilha do dia e carrossel ----------
+  const art = (t, opts) => window.FX.landscape(t.id, opts);
+  function trailOfDay() {
+    const day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 864e5);
+    return curated[day % curated.length];
+  }
+
+  function renderHero() {
+    if (!$("#heroTopo").firstChild) $("#heroTopo").innerHTML = window.FX.contours("pumping-life");
+    const t = trailOfDay();
+    $("#trailOfDay").innerHTML = `
+      <div class="day-art">${art(t, { tall: true })}</div>
+      <div class="day-body">
+        <span class="day-sign">Trilha do dia</span>
+        <h2>${esc(t.name)}</h2>
+        <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)}</p>
+        <p class="day-stats"><span>${num(t.km)} km</span><span>↑ ${num(t.elevation)} m</span><span>${duration(t.hours)}</span><span class="diff-${DIFF_CLASS[t.difficulty]}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty}</span></p>
+        <div class="day-actions">
+          <button class="btn" type="button" data-open="${t.id}">Ver trilha</button>
+          <button class="btn btn-ghost on-art" type="button" data-schedule-id="${t.id}">Agendar</button>
+        </div>
+      </div>`;
+    const list = curated.slice().sort((a, b) => upcomingCount(b.id) - upcomingCount(a.id) || a.name.localeCompare(b.name));
+    $("#featuredList").innerHTML = list.map((t, i) => {
+      const n = upcomingCount(t.id);
+      return `
+      <li style="--i:${i}">
+        <button class="feat-card" type="button" data-open="${t.id}">
+          <span class="feat-art">${art(t)}<span class="feat-km">${num(t.km)} km</span>${n ? `<span class="feat-badge">${plural(n, "saída", "saídas")}</span>` : ""}</span>
+          <span class="feat-body">
+            <span class="feat-place"><span class="uf-plate sm">${t.uf}</span>${esc(t.city)}</span>
+            <span class="feat-name">${esc(t.name)}</span>
+            <span class="feat-meta"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${t.difficulty} · ↑ ${num(t.elevation)} m · ${duration(t.hours)}</span>
+          </span>
+        </button>
+      </li>`;
+    }).join("");
+  }
+
+  document.addEventListener("click", (e) => {
+    const open = e.target.closest("[data-open]");
+    if (open) { openTrail(open.dataset.open); return; }
+    const sch = e.target.closest("[data-schedule-id]");
+    if (sch) { openEventForm(sch.dataset.scheduleId); return; }
+    const sc = e.target.closest("[data-scroll]");
+    if (sc) {
+      const list = $("#featuredList");
+      list.scrollBy({ left: +sc.dataset.scroll * Math.max(280, list.clientWidth * 0.8), behavior: window.FX.reduce() ? "auto" : "smooth" });
+    }
+  });
 
   function setOrigin(o) {
     origin = o;
@@ -496,6 +553,14 @@
     const dist = origin ? `<span>${num(Math.round(distanceKm(origin, t)))} km de ${esc(origin.label)}</span>` : "";
     const dlg = $("#trailDialog");
     dlg.innerHTML = `
+      <div class="detail-art">
+        ${art(t, { tall: true })}
+        <div class="signpost" aria-hidden="true">
+          <span class="sign-board"><span class="sign-name">${esc(t.name.length > 34 ? t.name.slice(0, 32) + "…" : t.name)}</span><span class="sign-km">${num(t.km)} km</span></span>
+          <span class="sign-post"></span>
+        </div>
+        <button class="icon-btn detail-close" type="button" data-close aria-label="Fechar">×</button>
+      </div>
       <div class="form trail-detail">
         <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)} · ${esc(STATE_NAMES[t.uf])}</p>
         <h2>${esc(t.name)}</h2>
@@ -516,7 +581,7 @@
           <button class="btn" type="button" data-schedule>Agendar esta trilha</button>
         </div>
       </div>`;
-    $("[data-close]", dlg).addEventListener("click", () => dlg.close());
+    dlg.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => dlg.close()));
     $("[data-schedule]", dlg).addEventListener("click", () => { dlg.close(); openEventForm(id); });
     dlg.showModal();
   }
@@ -532,6 +597,13 @@
   // ---------- Agenda ----------
   let eventFilter = "upcoming";
   const byDate = (a, b) => (a.date + a.time).localeCompare(b.date + b.time);
+
+  function countdown(iso) {
+    const days = Math.round((new Date(iso + "T12:00:00") - new Date(todayISO() + "T12:00:00")) / 864e5);
+    if (days < 0) return '<span class="t-count past">realizada</span>';
+    const txt = days === 0 ? "hoje" : days === 1 ? "amanhã" : `em ${days} dias`;
+    return `<span class="t-count${days <= 1 ? " soon" : ""}">${txt}</span>`;
+  }
 
   function renderEvents() {
     const today = todayISO();
@@ -562,6 +634,7 @@
           <span class="t-day">${fmtDate(e.date, { day: "2-digit" })}</span>
           <span class="t-month">${fmtDate(e.date, { month: "short" }).replace(".", "")}</span>
           <span class="t-time">${esc(e.time)}</span>
+          ${countdown(e.date)}
         </div>
         <div class="event-body">
           <p class="eyebrow"><span class="uf-plate sm">${t.uf}</span> ${esc(t.city)}</p>
@@ -652,6 +725,7 @@
     return `há ${plural(d, "dia", "dias")}`;
   }
 
+  let justLiked = null;
   function renderFeed() {
     const name = me();
     $("#feed").innerHTML = state.posts.slice().sort((a, b) => b.at - a.at).map((p) => {
@@ -670,7 +744,7 @@
         ${t ? `<button class="trail-tag" type="button" data-trail="${t.id}"><i class="blaze ${DIFF_CLASS[t.difficulty]}"></i>${esc(t.name)} · ${esc(t.city)}, ${t.uf}</button>` : ""}
         <p class="post-text">${esc(p.text)}</p>
         <div class="post-actions">
-          <button class="link like${liked ? " liked" : ""}" data-act="like" aria-pressed="${!!liked}">
+          <button class="link like${liked ? " liked" : ""}${liked && p.id === justLiked ? " pop" : ""}" data-act="like" aria-pressed="${!!liked}">
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.7 4.5c2.2 0 3.6 1.3 4.3 2.5h2c.7-1.2 2.1-2.5 4.3-2.5 3.7 0 5.8 3.9 4.3 7.3C19.5 16.4 12 21 12 21Z" fill="${liked ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
             ${p.likes.length}
           </button>
@@ -709,6 +783,7 @@
       const name = me();
       if (btn.dataset.act === "like") {
         post.likes = post.likes.includes(name) ? post.likes.filter((x) => x !== name) : [...post.likes, name];
+        justLiked = post.id;
       } else if (btn.dataset.act === "del" && post.author === name) {
         if (!(await ask("Excluir esta publicação?", "Excluir"))) return;
         state.posts = state.posts.filter((p) => p !== post);
@@ -797,7 +872,12 @@
   $("#shopSort").addEventListener("change", renderShop);
   document.addEventListener("click", (e) => {
     const add = e.target.closest("[data-add]");
-    if (add) { addToCart(add.dataset.add); renderShop(); return; }
+    if (add) {
+      const p = productById[add.dataset.add];
+      const from = add.closest(".product")?.querySelector(".product-art") || add;
+      window.FX.flyTo(from, $("#cartBtn"), icon(p, 28));
+      addToCart(add.dataset.add); renderShop(); return;
+    }
     if (e.target.closest("[data-open-cart]")) openCart();
   });
   $("#cartBtn").addEventListener("click", () => openCart());
@@ -964,7 +1044,9 @@
     if (!isNaN(d)) $(".footer p").insertAdjacentHTML("beforeend", ` Trilhas do OpenStreetMap atualizadas em ${d.toLocaleDateString("pt-BR")}.`);
   }
 
-  function renderAll() { renderStats(); renderTrails(); renderEvents(); renderFeed(); renderShop(); renderCartBadge(); }
+  window.addEventListener("resize", () => window.FX.tabIndicator($(".tabs")));
+
+  function renderAll() { renderHero(); renderStats(); renderTrails(); renderEvents(); renderFeed(); renderShop(); renderCartBadge(); }
 
   fillSelects();
   initMap();

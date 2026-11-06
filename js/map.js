@@ -41,6 +41,7 @@
     });
 
     const ring = el("ellipse", { class: "ring", visibility: "hidden" }, svg);
+    const youPulse = el("circle", { class: "you-pulse", visibility: "hidden" }, svg);
     const you = el("circle", { class: "you", visibility: "hidden" }, svg);
     const layer = el("g", {}, svg);
 
@@ -50,10 +51,14 @@
       const [x, y] = proj(t.lat, t.lng);
       const g = el("g", { class: `pin pin-${opts.diffClass[t.difficulty]}`, tabindex: "0", role: "button", "aria-label": `${t.name}, ${t.city}` }, layer);
       el("title", {}, g).textContent = `${t.name} — ${t.city}, ${t.uf}`;
+      g.style.setProperty("--d", `${(Object.keys(pins).length % 80) * 12}ms`);
       const mark = el("rect", {}, g);
       const label = el("text", {}, g);
       label.textContent = t.name;
       g.addEventListener("click", () => opts.onPick(t.id));
+      g.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") showCard(t, e); });
+      g.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") moveCard(e); });
+      g.addEventListener("pointerleave", hideCard);
       g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onPick(t.id); } });
       pins[t.id] = { g, mark, label, x, y, on: true };
     }
@@ -94,17 +99,33 @@
       if (origin) {
         const [x, y] = proj(origin.lat, origin.lng);
         you.setAttribute("cx", x); you.setAttribute("cy", y); you.setAttribute("r", 6 * u);
+        youPulse.setAttribute("cx", x); youPulse.setAttribute("cy", y); youPulse.setAttribute("r", 6 * u);
         ring.setAttribute("cx", x); ring.setAttribute("cy", y);
         ring.setAttribute("rx", (radiusKm / (111.32 * Math.cos((origin.lat * Math.PI) / 180))) * COS * 10);
         ring.setAttribute("ry", (radiusKm / 110.57) * 10);
       }
     }
 
+    let anim = 0;
+    function animateTo(target) {
+      cancelAnimationFrame(anim);
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce) { view = target; draw(); return; }
+      const from = { ...view }, t0 = performance.now(), dur = 520;
+      const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+      const step = (now) => {
+        const k = ease(Math.min(1, (now - t0) / dur));
+        view = { x: from.x + (target.x - from.x) * k, y: from.y + (target.y - from.y) * k, w: from.w + (target.w - from.w) * k, h: from.h + (target.h - from.h) * k };
+        draw();
+        if (k < 1) anim = requestAnimationFrame(step);
+      };
+      anim = requestAnimationFrame(step);
+    }
+
     function setView(cx, cy, w) {
       w = Math.min(MAX_W, Math.max(MIN_W, w));
       const h = (w * HOME.h) / HOME.w;
-      view = { x: cx - w / 2, y: cy - h / 2, w, h };
-      draw();
+      animateTo({ x: cx - w / 2, y: cy - h / 2, w, h });
     }
 
     function fitBox(b, pad = 1.2) {
@@ -129,6 +150,7 @@
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
+      cancelAnimationFrame(anim);
       zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX, e.clientY);
     }, { passive: false });
 
@@ -138,7 +160,7 @@
     svg.addEventListener("pointerdown", (e) => {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       moved = false;
-      if (pointers.size === 1) drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      if (pointers.size === 1) { cancelAnimationFrame(anim); drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; }
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
@@ -174,6 +196,29 @@
     svg.addEventListener("pointercancel", end);
     svg.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); } }, true);
 
+    const card = document.createElement("div");
+    card.className = "map-card";
+    card.hidden = true;
+    container.appendChild(card);
+    function showCard(t, e) {
+      card.innerHTML = `<b></b><span class="mc-place"></span><span class="mc-meta"></span>`;
+      card.querySelector("b").textContent = t.name;
+      card.querySelector(".mc-place").textContent = `${t.city}, ${t.uf}`;
+      card.querySelector(".mc-meta").textContent = `${String(t.km).replace(".", ",")} km · ${t.difficulty}`;
+      card.dataset.diff = opts.diffClass[t.difficulty];
+      card.hidden = false;
+      moveCard(e);
+    }
+    function moveCard(e) {
+      const r = container.getBoundingClientRect();
+      let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+      if (x + card.offsetWidth > r.width - 8) x = e.clientX - r.left - card.offsetWidth - 14;
+      if (y + card.offsetHeight > r.height - 8) y = e.clientY - r.top - card.offsetHeight - 14;
+      card.style.transform = `translate(${x}px, ${y}px)`;
+    }
+    function hideCard() { card.hidden = true; }
+    svg.addEventListener("pointerdown", hideCard);
+
     const ctrls = document.createElement("div");
     ctrls.className = "map-ctrls";
     ctrls.innerHTML =
@@ -183,7 +228,7 @@
     ctrls.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
-      if (b.dataset.z === "home") { view = { ...HOME }; draw(); return; }
+      if (b.dataset.z === "home") { animateTo({ ...HOME }); return; }
       setView(view.x + view.w / 2, view.y + view.h / 2, view.w * (b.dataset.z === "in" ? 0.6 : 1.6));
     });
     container.appendChild(ctrls);
@@ -204,7 +249,7 @@
       },
       setOrigin(o, r) {
         origin = o; radiusKm = r;
-        ring.setAttribute("visibility", "visible"); you.setAttribute("visibility", "visible");
+        ring.setAttribute("visibility", "visible"); you.setAttribute("visibility", "visible"); youPulse.setAttribute("visibility", "visible");
         draw();
         fitBox(ring.getBBox(), 1.15);
       },

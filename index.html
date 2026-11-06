@@ -39,10 +39,12 @@
   <main>
     <!-- EXPLORAR -->
     <section id="view-explorar" class="view">
-      <div class="intro">
+      <div class="hero">
+        <div class="hero-topo" id="heroTopo" aria-hidden="true"></div>
+        <div class="intro">
         <div>
           <p class="eyebrow">Explorar</p>
-          <h1>Trilhas por estado e cidade</h1>
+          <h1 class="hero-title">Escolha a serra.<br /><span>A gente mostra o caminho.</span></h1>
           <p id="catalogStats" class="stats-line"></p>
         </div>
         <form id="searchForm" class="search" autocomplete="off">
@@ -59,7 +61,20 @@
           </button>
         </form>
         <p id="locStatus" class="loc-status" aria-live="polite"></p>
+        </div>
+        <article id="trailOfDay" class="day-card" aria-label="Trilha do dia"></article>
       </div>
+
+      <section class="featured" aria-labelledby="featuredTitle">
+        <div class="featured-head">
+          <h2 id="featuredTitle">Em destaque</h2>
+          <div class="featured-nav">
+            <button class="icon-btn" type="button" data-scroll="-1" aria-label="Anteriores">&larr;</button>
+            <button class="icon-btn" type="button" data-scroll="1" aria-label="Próximas">&rarr;</button>
+          </div>
+        </div>
+        <ul id="featuredList" class="featured-list"></ul>
+      </section>
 
       <div class="filters">
         <label>Estado
@@ -275,6 +290,7 @@
   <script src="js/municipios.js"></script>
   <script src="js/shop.js"></script>
   <script src="js/osm-live.js"></script>
+  <script src="js/fx.js"></script>
   <script src="js/brazil-geo.js"></script>
   <script src="js/map.js"></script>
   <script src="js/store.js"></script>
