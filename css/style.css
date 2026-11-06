@@ -302,13 +302,13 @@ textarea { resize: vertical; }
 .sched { font-size: .72rem; font-weight: 800; color: var(--forest); background: var(--leaf); border-radius: 999px; padding: .1rem .5rem; white-space: nowrap; }
 .empty { list-style: none; padding: 2.5rem 1rem; text-align: center; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r-lg); display: grid; gap: .3rem; }
 
-.overview-list { list-style: none; margin: 0; padding: .35rem 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.overview-item {
-  width: 100%; display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem;
-  background: none; border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer;
-}
-.overview-item:hover { background: var(--leaf); }
 .more { justify-self: center; }
+.state-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.state-chip {
+  display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .55rem .2rem .25rem; cursor: pointer;
+  font: 600 .8rem/1 var(--mono); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+}
+.state-chip:hover { border-color: var(--forest); background: var(--leaf); }
 .trail-meta abbr { text-decoration: none; cursor: help; }
 .source-note { font-size: .85rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: .7rem; }
 

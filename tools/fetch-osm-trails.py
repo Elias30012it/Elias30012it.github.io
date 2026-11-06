@@ -64,9 +64,12 @@ KEYWORDS = [
 MIN_KM = 0.4
 # Nomes que descrevem um tipo de caminho e não identificam uma trilha.
 GENERIC = re.compile(
-    r"^(acesso\b|trilha( de| da)? (liga[cç][aã]o|caminhada|alternativa|desconhecida|ecol[oó]gica|secund[aá]ria|principal|interna|"
-    r"sem nome|particular|privada|de servi[cç]o|interpretativa|suspensa|nova|velha|antiga)\b|trilha$|caminho$|[a-z]?\s?\d+$)",
+    r"^(acesso( (a|ao|à|às|aos|as|para|pra|da|do))?( (o|a))? ?(mirantes?|cachoeiras?|trilhas?|praias?|ponto|rio|pico)?$|"
+    r"acesso (a|à|ao)s? trilha|trilha( de| da)? (liga[cç][aã]o|caminhada|alternativa|desconhecida|ecol[oó]gica|secund[aá]ria|principal|interna|"
+    r"sem nome|particular|privada|de servi[cç]o|interpretativa|suspensa|nova|velha|antiga)\b|trilhas?$|caminhos?$|mirantes?$|cachoeiras?$|[a-z]?\s?\d+$)",
     re.I)
+# Linhas que não são trilhas, mesmo marcadas como caminho (limites, cercas, aceiros).
+NOT_TRAIL = re.compile(r"zona de amortecimento|\blimite\b|\bdivisa\b|\baceiro\b|\bcerca\b", re.I)
 COS = math.cos(math.radians(15))
 LNG0, LAT0 = -76.0, 7.0  # mesma projeção de js/map.js e tools/build-geo.py
 
@@ -114,6 +117,7 @@ WAY_FILTER = """osmrel:59470 ogc:sfContains ?el .
     (?hw IN ("path", "footway", "bridleway", "track") && REGEX(?name, "^(trilha|travessia) ", "i"))
     || (?hw = "path" && REGEX(?name, "^caminho ", "i"))
     || (?hw = "path" && BOUND(?sac))
+    || (?hw = "path" && REGEX(?name, "(pico|pedra|morro|cachoeira|serra|mirante|cume|travessia|trilha|trekking|vale)", "i"))
   )"""
 Q_WAYS = "SELECT ?el ?name ?len ?wkt WHERE {\n  " + WAY_FILTER + "\n  ?el osm2rdf:length ?len ; geo:hasGeometry/geo:asWKT ?wkt .\n}"
 Q_WAY_CITIES = "SELECT ?el ?ibge WHERE {\n  " + WAY_FILTER + """
@@ -365,7 +369,8 @@ def process(raw):
         if km > 1500:
             continue
         lat, lng = anchor(lines)
-        if re.match(r"^(rua|avenida|travessa|estrada|rodovia)\b", name, re.I) or GENERIC.search(name):
+        name = re.sub(r"\s+", " ", name.replace("\u00a0", " ")).strip()
+        if re.match(r"^(rua|avenida|travessa|estrada|rodovia|rotat[oó]ria|alameda|pra[cç]a|viela|beco)\b", name, re.I) or GENERIC.search(name) or NOT_TRAIL.search(name):
             continue  # vias urbanas, estradas e nomes genéricos que não identificam uma trilha
         candidates.append({"el": el, "tags": tags, "name": clean_name(name), "km": km, "lat": lat, "lng": lng})
 

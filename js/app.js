@@ -226,7 +226,7 @@
         city, trails: trails.sort(origin ? (a, b) => a.dist - b.dist : byName), near: origin ? minDist(trails) : 0,
       })).sort(origin ? (a, b) => a.near - b.near : (a, b) => a.city.localeCompare(b.city));
       return { uf, cities: cityList, count: cityList.reduce((n, c) => n + c.trails.length, 0), near: origin ? Math.min(...cityList.map((c) => c.near)) : 0 };
-    }).sort(origin ? (a, b) => a.near - b.near : (a, b) => STATE_NAMES[a.uf].localeCompare(STATE_NAMES[b.uf]));
+    }).sort(origin ? (a, b) => a.near - b.near : (a, b) => b.count - a.count || STATE_NAMES[a.uf].localeCompare(STATE_NAMES[b.uf]));
   }
 
   function trailRow(t) {
@@ -250,22 +250,12 @@
   const PAGE = 120;
   let shown = PAGE;
 
-  function stateOverview(list) {
-    const cities = {}, counts = {};
-    list.forEach((t) => {
-      counts[t.uf] = (counts[t.uf] || 0) + 1;
-      (cities[t.uf] = cities[t.uf] || new Set()).add(t.city);
-    });
-    return `
-      <section class="state-group overview">
-        <header class="state-head"><h2>Escolha um estado</h2><span class="state-count">ou clique no mapa</span></header>
-        <ul class="overview-list">${Object.keys(counts).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((uf) => `
-          <li><button class="overview-item" type="button" data-uf="${uf}">
-            <span class="uf-plate">${uf}</span>
-            <span class="trail-main"><span class="trail-name">${esc(STATE_NAMES[uf])}</span><span class="trail-meta"><span>${plural(counts[uf], "trilha", "trilhas")}</span><span>${plural(cities[uf].size, "cidade", "cidades")}</span></span></span>
-          </button></li>`).join("")}
-        </ul>
-      </section>`;
+  function stateChips(list) {
+    const counts = {};
+    list.forEach((t) => { counts[t.uf] = (counts[t.uf] || 0) + 1; });
+    return `<div class="state-chips" role="group" aria-label="Filtrar por estado">${Object.keys(counts)
+      .sort((a, b) => counts[b] - counts[a] || a.localeCompare(b))
+      .map((uf) => `<button class="state-chip" type="button" data-uf="${uf}" title="${esc(STATE_NAMES[uf])}"><span class="uf-plate sm">${uf}</span>${num(counts[uf])}</button>`).join("")}</div>`;
   }
 
   function renderTrails(resetPage = true) {
@@ -281,9 +271,8 @@
     const filtered = $("#stateFilter").value || $("#cityFilter").value || $("#difficulty").value || $("#nameFilter").value || origin;
     $("#clearFilters").hidden = !filtered;
 
-    const overview = list.length > PAGE && !filtered;
     let budget = shown;
-    const groups = overview ? [] : groupTrails(list).map((g) => {
+    const groups = groupTrails(list).map((g) => {
       const cities = [];
       for (const c of g.cities) {
         if (budget <= 0) break;
@@ -296,8 +285,7 @@
 
     $("#trailGroups").innerHTML = !list.length
       ? `<div class="empty"><p>Nenhuma trilha com esses filtros.</p><p class="muted">${origin ? "Aumente o raio de distância ou " : ""}troque o estado ou a cidade.</p></div>`
-      : overview ? stateOverview(list)
-      : groups.map((g) => `
+      : (!$("#stateFilter").value && !$("#cityFilter").value ? stateChips(list) : "") + groups.map((g) => `
       <section class="state-group">
         <header class="state-head">
           <span class="uf-plate">${g.uf}</span>
@@ -310,7 +298,7 @@
             <ul class="trail-list">${c.trails.map(trailRow).join("")}</ul>
           </div>`).join("")}
       </section>`).join("")
-      + (!overview && rest > 0 ? `<button id="moreTrails" class="btn btn-ghost more" type="button">Mostrar mais ${num(Math.min(PAGE, rest))} (faltam ${num(rest)})</button>` : "");
+      + (rest > 0 ? `<button id="moreTrails" class="btn btn-ghost more" type="button">Mostrar mais ${num(Math.min(PAGE, rest))} (faltam ${num(rest)})</button>` : "");
 
     mapView?.setVisible(new Set(list.map((t) => t.id)));
   }
@@ -496,7 +484,7 @@
   $("#trailGroups").addEventListener("click", (e) => {
     const b = e.target.closest(".trail");
     if (b) { openTrail(b.dataset.id); return; }
-    const st = e.target.closest(".overview-item");
+    const st = e.target.closest(".state-chip");
     if (st) { setStateFilter(st.dataset.uf); return; }
     if (e.target.closest("#moreTrails")) { shown += PAGE; renderTrails(false); }
   });
