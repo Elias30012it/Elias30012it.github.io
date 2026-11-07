@@ -41,6 +41,8 @@
     });
 
     const ring = el("ellipse", { class: "ring", visibility: "hidden" }, svg);
+    const routePath = el("path", { class: "route", visibility: "hidden" }, svg);
+    const routeEnd = el("circle", { class: "route-end", visibility: "hidden" }, svg);
     const youPulse = el("circle", { class: "you-pulse", visibility: "hidden" }, svg);
     const you = el("circle", { class: "you", visibility: "hidden" }, svg);
     // Marcadores: um <rect> de 1×1 por trilha, girado e escalado só por CSS (variável --ps no <svg>).
@@ -91,6 +93,7 @@
         });
       }
       stateLabels.forEach((t) => t.setAttribute("font-size", 10.5 * u));
+      routeEnd.setAttribute("r", 6 * u);
       labelsG.style.display = view.w > 30 ? "" : "none";
       if (origin) {
         const [x, y] = proj(origin.lat, origin.lng);
@@ -253,6 +256,17 @@
         fitBox(ring.getBBox(), 1.15);
       },
       setRadius(r) { radiusKm = r; draw(); },
+      showRoute(line) {
+        const step = Math.max(1, Math.floor(line.length / 1500));
+        const pts = line.filter((_, i) => i % step === 0 || i === line.length - 1).map(([lat, lng]) => proj(lat, lng));
+        routePath.setAttribute("d", "M" + pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join("L"));
+        const [ex, ey] = pts[pts.length - 1];
+        routeEnd.setAttribute("cx", ex); routeEnd.setAttribute("cy", ey);
+        routePath.setAttribute("visibility", "visible"); routeEnd.setAttribute("visibility", "visible");
+        draw();
+        fitBox(routePath.getBBox(), 1.3);
+      },
+      clearRoute() { routePath.setAttribute("visibility", "hidden"); routeEnd.setAttribute("visibility", "hidden"); },
       clearOrigin() {
         origin = null;
         [ring, you, youPulse].forEach((n) => n.setAttribute("visibility", "hidden"));

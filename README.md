@@ -46,7 +46,11 @@ Leaflet.markercluster (MIT). As duas bibliotecas estão em `js/vendor/leaflet/` 
 Se os mapas não carregarem (sem internet ou bloqueados) — e na versão de arquivo único — o site usa o mapa
 próprio em SVG (`js/map.js` + `js/brazil-geo.js`), baixado só nesse caso.
 
-Os servidores do OpenStreetMap e do OpenTopoMap são mantidos por voluntários e pedem uso moderado e a
+**Como chegar** traça a rota dentro do site (`js/route.js`), sem Google Maps: carro, bicicleta ou a pé, com
+distância, tempo e passo a passo em português. Usa o serviço de rotas do OpenStreetMap mantido pela FOSSGIS
+(`routing.openstreetmap.de`, OSRM), gratuito e sem chave.
+
+Os servidores do OpenStreetMap, do OpenTopoMap e de rotas são mantidos por voluntários e pedem uso moderado e a
 atribuição que aparece no canto do mapa. Para muito tráfego, troque por um provedor de mapas com plano próprio.
 
 ## Segurança
