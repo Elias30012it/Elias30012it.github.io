@@ -141,10 +141,11 @@
   const distanceKm = hav;
 
   // Municípios do IBGE: "nome|UF|lat|lng|capital;..."
-  const CITIES = window.MUNICIPIOS.split(";").map((r) => {
+  let citiesCache = null;
+  const cities = () => citiesCache || (citiesCache = window.MUNICIPIOS.split(";").map((r) => {
     const [name, uf, lat, lng, cap] = r.split("|");
     return { name, uf, lat: +lat, lng: +lng, capital: cap === "1", key: norm(name), full: norm(`${name}, ${uf}`) };
-  });
+  }));
   const POPULAR = ["sao paulo, sp", "rio de janeiro, rj", "belo horizonte, mg", "curitiba, pr", "florianopolis, sc",
     "brasilia, df", "porto alegre, rs", "salvador, ba", "goiania, go", "campinas, sp"];
   const cleanQuery = (q) => norm(q).replace(/\s*[-–\/]\s*([a-z]{2})$/, ", $1");
@@ -154,11 +155,11 @@
     if (!q) {
       // Sem texto: a cidade do perfil primeiro, depois as capitais mais buscadas.
       const own = state.user?.city ? cityMatches(state.user.city, 1) : [];
-      const popular = POPULAR.map((k) => CITIES.find((c) => c.full === k)).filter(Boolean);
+      const popular = POPULAR.map((k) => cities().find((c) => c.full === k)).filter(Boolean);
       return own.concat(popular.filter((c) => !own.includes(c))).slice(0, limit);
     }
     const starts = [], contains = [];
-    for (const c of CITIES) {
+    for (const c of cities()) {
       if (c.full.startsWith(q) || c.key.startsWith(q)) starts.push(c);
       else if (c.key.includes(q)) contains.push(c);
     }
@@ -168,7 +169,7 @@
 
   function localCity(query) {
     const q = cleanQuery(query);
-    const hit = CITIES.find((c) => c.full === q) || cityMatches(query, 1)[0];
+    const hit = cities().find((c) => c.full === q) || cityMatches(query, 1)[0];
     return hit ? { lat: hit.lat, lng: hit.lng, label: `${hit.name}, ${hit.uf}` } : null;
   }
 
@@ -349,7 +350,10 @@
   }
 
   function renderHero() {
-    if (!$("#heroTopo").firstChild) $("#heroTopo").innerHTML = window.FX.contours("pumping-life");
+    if (!$("#heroTopo").firstChild) {
+      $("#heroTopo").innerHTML = window.FX.contours("pumping-life");
+      window.FX.pauseOffscreen($(".hero"));
+    }
     const t = trailOfDay();
     $("#trailOfDay").innerHTML = `
       <div class="day-art">${art(t, { tall: true })}</div>
@@ -436,8 +440,8 @@
     osmStatus(`<span class="spinner" aria-hidden="true"></span> Buscando trilhas do OpenStreetMap em ${esc(where)}…`, "loading");
     try {
       const list = req.kind === "state"
-        ? await window.OsmLive.state(req.uf, CITIES, liveCtrl.signal)
-        : await window.OsmLive.around(req.o.lat, req.o.lng, +$("#radius").value, CITIES, liveCtrl.signal);
+        ? await window.OsmLive.state(req.uf, cities(), liveCtrl.signal)
+        : await window.OsmLive.around(req.o.lat, req.o.lng, +$("#radius").value, cities(), liveCtrl.signal);
       if (req.kind === "state") loadedStates.add(req.uf);
       const n = addTrails(list);
       osmStatus(list.length
@@ -705,6 +709,7 @@
 
   function openEventForm(trailId) {
     requireUser(() => {
+      ensureTrailSelects();
       $("#evTrail").value = trailId || $("#evTrail").value || TRAILS[0].id;
       const min = todayISO();
       $("#evDate").min = min;
@@ -784,6 +789,8 @@
       </li>`;
     }).join("") || '<li class="empty"><p>Nenhuma publicação ainda.</p></li>';
   }
+
+  ["focus", "pointerdown"].forEach((ev) => $("#postTrail").addEventListener(ev, ensureTrailSelects));
 
   $("#postForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1053,7 +1060,11 @@
   }
 
   // ---------- Início ----------
-  function fillTrailSelects() {
+  let selectsReady = false;
+  function fillTrailSelects() { selectsReady = false; }
+  function ensureTrailSelects() {
+    if (selectsReady) return;
+    selectsReady = true;
     const groups = {};
     TRAILS.forEach((t) => { (groups[t.uf] = groups[t.uf] || []).push(t); });
     const opts = Object.keys(groups).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((uf) =>

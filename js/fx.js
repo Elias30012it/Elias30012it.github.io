@@ -178,5 +178,11 @@
     box.style.setProperty("--my", ((e.clientY - r.top) / r.height - 0.5).toFixed(3));
   }, { passive: true });
 
-  window.FX = { landscape, contours, countUp, tabIndicator, flyTo, rng, reduce };
+  // ---------- Animações pausadas fora da tela ----------
+  function pauseOffscreen(el) {
+    if (!el || !("IntersectionObserver" in window)) return;
+    new IntersectionObserver((entries) => entries.forEach((e) => e.target.classList.toggle("is-offscreen", !e.isIntersecting))).observe(el);
+  }
+
+  window.FX = { landscape, contours, countUp, tabIndicator, flyTo, rng, reduce, pauseOffscreen };
 })();

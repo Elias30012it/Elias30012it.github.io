@@ -43,25 +43,26 @@
     const ring = el("ellipse", { class: "ring", visibility: "hidden" }, svg);
     const youPulse = el("circle", { class: "you-pulse", visibility: "hidden" }, svg);
     const you = el("circle", { class: "you", visibility: "hidden" }, svg);
-    const layer = el("g", {}, svg);
+    // Marcadores: um <rect> de 1×1 por trilha, girado e escalado só por CSS (variável --ps no <svg>).
+    // Assim o zoom muda uma variável, em vez de reposicionar milhares de elementos a cada quadro.
+    const layer = el("g", { class: "pins" }, svg);
+    const labelLayer = el("g", { class: "pin-labels" }, svg);
 
     const pins = {};
     function addPin(t) {
       if (pins[t.id]) return;
       const [x, y] = proj(t.lat, t.lng);
-      const g = el("g", { class: `pin pin-${opts.diffClass[t.difficulty]}` }, layer);
-      el("title", {}, g).textContent = `${t.name} — ${t.city}, ${t.uf}`;
-      g.style.setProperty("--d", `${(Object.keys(pins).length % 80) * 12}ms`);
-      const mark = el("rect", {}, g);
-      const label = el("text", {}, g);
-      label.textContent = t.name;
-      g.addEventListener("click", () => opts.onPick(t.id));
-      g.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") showCard(t, e); });
-      g.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") moveCard(e); });
-      g.addEventListener("pointerleave", hideCard);
-      pins[t.id] = { g, mark, label, x, y, on: true };
+      const mark = el("rect", { class: `pin pin-${opts.diffClass[t.difficulty]}`, x: x - 0.5, y: y - 0.5, width: 1, height: 1, "data-id": t.id }, layer);
+      pins[t.id] = { t, mark, x, y, on: true };
     }
     trails.forEach(addPin);
+
+    // Um único conjunto de eventos para todos os marcadores
+    const pinOf = (e) => { const r = e.target.closest?.(".pin"); return r ? pins[r.getAttribute("data-id")] : null; };
+    layer.addEventListener("click", (e) => { const p = pinOf(e); if (p) opts.onPick(p.t.id); });
+    layer.addEventListener("pointerover", (e) => { const p = pinOf(e); if (p && e.pointerType === "mouse") showCard(p.t, e); });
+    layer.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && pinOf(e)) moveCard(e); });
+    layer.addEventListener("pointerout", (e) => { if (pinOf(e)) hideCard(); });
 
     let view = { ...HOME };
     let origin = null, radiusKm = 300;
@@ -75,24 +76,20 @@
       svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
       const u = unitsPerPx();
       svg.style.setProperty("--u", u);
-      // Rótulos só quando poucas trilhas estão na tela; marcadores menores quando há muitas.
+      // Tamanho do marcador em pixels de tela (menor quando há muitas trilhas visíveis).
       const all = Object.values(pins).filter((p) => p.on);
-      const inView = all.filter((p) => p.x > view.x && p.x < view.x + view.w && p.y > view.y && p.y < view.y + view.h).length;
-      const showTrailLabels = inView <= 40;
       const size = all.length > 400 ? 6 : all.length > 120 ? 7.5 : 9;
-      Object.values(pins).forEach((p) => {
-        if (!p.on) return;
-        const s = size * u; // marcador quadrado girado, como uma marca de trilha pintada
-        p.mark.setAttribute("x", p.x - s / 2);
-        p.mark.setAttribute("y", p.y - s / 2);
-        p.mark.setAttribute("width", s);
-        p.mark.setAttribute("height", s);
-        p.mark.setAttribute("transform", `rotate(45 ${p.x} ${p.y})`);
-        p.label.setAttribute("x", p.x + 9 * u);
-        p.label.setAttribute("y", p.y + 4 * u);
-        p.label.setAttribute("font-size", 12 * u);
-        p.label.style.display = showTrailLabels ? "" : "none";
-      });
+      svg.style.setProperty("--ps", size * u);
+      svg.style.setProperty("--psz", size);
+      // Rótulos só quando até 40 trilhas aparecem na tela; criados sob demanda.
+      const inView = all.filter((p) => p.x > view.x && p.x < view.x + view.w && p.y > view.y && p.y < view.y + view.h);
+      labelLayer.textContent = "";
+      if (inView.length <= 40) {
+        inView.forEach((p) => {
+          const tx = el("text", { x: p.x + 9 * u, y: p.y + 4 * u, "font-size": 12 * u }, labelLayer);
+          tx.textContent = p.t.name;
+        });
+      }
       stateLabels.forEach((t) => t.setAttribute("font-size", 10.5 * u));
       labelsG.style.display = view.w > 30 ? "" : "none";
       if (origin) {
@@ -243,7 +240,10 @@
     return {
       addTrails(list) { list.forEach(addPin); draw(); },
       setVisible(ids) {
-        Object.entries(pins).forEach(([id, p]) => { p.on = ids.has(id); p.g.style.display = p.on ? "" : "none"; });
+        Object.entries(pins).forEach(([id, p]) => {
+          const on = ids.has(id);
+          if (on !== p.on) { p.on = on; p.mark.style.display = on ? "" : "none"; }
+        });
         draw();
       },
       setOrigin(o, r) {

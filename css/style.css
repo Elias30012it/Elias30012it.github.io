@@ -237,13 +237,15 @@ textarea { resize: vertical; }
   fill: var(--muted); font-family: var(--font); font-weight: 800; letter-spacing: .06em;
   text-anchor: middle; dominant-baseline: middle; pointer-events: none; opacity: .75;
 }
-.svgmap .pin { cursor: pointer; outline: none; }
-.svgmap .pin rect { stroke: var(--surface); stroke-width: calc(var(--u, 1) * 1.6); }
-.svgmap .pin-easy rect { fill: var(--easy); }
-.svgmap .pin-medium rect { fill: var(--medium); }
-.svgmap .pin-hard rect { fill: var(--hard); }
-.svgmap .pin:hover rect, .svgmap .pin:focus-visible rect { stroke: var(--ink); }
-.svgmap .pin text {
+.svgmap .pin {
+  cursor: pointer; stroke: var(--surface); stroke-width: calc(1.6 / var(--psz, 9));
+  transform-box: fill-box; transform-origin: center; transform: rotate(45deg) scale(var(--ps, 1));
+}
+.svgmap .pin-easy { fill: var(--easy); }
+.svgmap .pin-medium { fill: var(--medium); }
+.svgmap .pin-hard { fill: var(--hard); }
+.svgmap .pin:hover { stroke: var(--ink); stroke-width: calc(3 / var(--psz, 9)); }
+.svgmap .pin-labels text {
   fill: var(--ink); font-family: var(--font); font-weight: 700; pointer-events: none;
   paint-order: stroke; stroke: var(--land); stroke-width: calc(var(--u, 1) * 3); stroke-linejoin: round;
 }
@@ -576,7 +578,7 @@ legend { font-weight: 800; font-size: 1rem; margin-bottom: .5rem; padding: 0; }
 .hero-topo svg { width: 100%; height: 100%; }
 .contours path { fill: none; stroke: currentColor; stroke-width: 1; opacity: .16; }
 .contours .index { stroke-width: 1.8; opacity: .24; }
-.contours g { animation: topoDrift 60s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+.hero-topo { animation: topoDrift 60s ease-in-out infinite alternate; will-change: transform; }
 @keyframes topoDrift { to { transform: translate(-3%, 2%) rotate(2deg) scale(1.05); } }
 .hero-title { font-size: clamp(2rem, 4.6vw, 3.5rem); line-height: .98; letter-spacing: -.03em; font-weight: 900; }
 .hero-title span { color: var(--forest); }
@@ -612,9 +614,10 @@ legend { font-weight: 800; font-size: 1rem; margin-bottom: .5rem; padding: 0; }
 .scape .hill-2 { transform: translate(calc(var(--mx, 0) * -8px), calc(var(--my, 0) * -3px)); }
 .scape .hill-3 { transform: translate(calc(var(--mx, 0) * -14px), calc(var(--my, 0) * -4px)); }
 .scape .hill-4 { transform: translate(calc(var(--mx, 0) * -20px), calc(var(--my, 0) * -5px)); }
-.scape .sun { animation: sunFloat 9s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.day-card .scape .sun, .detail-art .scape .sun { animation: sunFloat 9s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
 @keyframes sunFloat { to { transform: translateY(-6px) scale(1.04); } }
-.scape .trail-line { animation: walk 3.5s linear infinite; }
+.day-card .trail-line, .detail-art .trail-line, .feat-card:hover .trail-line { animation: walk 3.5s linear infinite; }
+.is-offscreen *, .is-offscreen { animation-play-state: paused !important; }
 @keyframes walk { to { stroke-dashoffset: -36; } }
 
 /* Carrossel de destaques */
@@ -673,13 +676,12 @@ legend { font-weight: 800; font-size: 1rem; margin-bottom: .5rem; padding: 0; }
 .sign-post { width: 9px; height: 34px; margin-left: 1.4rem; background: linear-gradient(90deg, #4a2a12, #6b4122); border-radius: 2px 2px 0 0; }
 
 /* Mapa: marcadores surgindo, pulso na localização, ficha ao passar o mouse */
-.svgmap .pin { animation: fadeIn .5s both; animation-delay: var(--d, 0ms); }
-.svgmap .pin rect { transition: stroke-width .15s; }
-.svgmap .pin:hover rect { stroke-width: calc(var(--u, 1) * 3); }
+.svgmap .pins { animation: fadeIn .6s .1s both; }
 .svgmap .you-pulse {
   fill: none; stroke: var(--sign); stroke-width: calc(var(--u, 1) * 2); pointer-events: none;
   transform-box: fill-box; transform-origin: center; animation: pulse 2.2s ease-out infinite;
 }
+.svgmap .you-pulse[visibility="hidden"] { animation: none; }
 @keyframes pulse { from { transform: scale(1); opacity: .8; } to { transform: scale(3.6); opacity: 0; } }
 .map-card {
   position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; display: grid; gap: .1rem; min-width: 160px; max-width: 240px;
@@ -728,7 +730,8 @@ legend { font-weight: 800; font-size: 1rem; margin-bottom: .5rem; padding: 0; }
 .product-art { background-image: radial-gradient(circle at 50% 120%, rgba(255, 255, 255, .55), transparent 60%); }
 .product:hover .product-art .toon { animation: wobble .7s cubic-bezier(.3, 1.4, .5, 1); }
 @keyframes wobble { 0% { transform: rotate(0); } 30% { transform: rotate(-7deg) scale(1.08); } 60% { transform: rotate(4deg) scale(1.06); } 100% { transform: rotate(0) scale(1.05); } }
-.toon .spark { transform-box: fill-box; transform-origin: center; animation: twinkle 2.4s ease-in-out infinite; }
+.toon .spark { transform-box: fill-box; transform-origin: center; opacity: .8; }
+.product:hover .toon .spark { animation: twinkle 2.4s ease-in-out infinite; }
 .toon .spark.s2 { animation-delay: 1.2s; }
 @keyframes twinkle { 0%, 100% { opacity: .25; transform: scale(.6) rotate(0); } 50% { opacity: 1; transform: scale(1.1) rotate(45deg); } }
 .cart-art .toon, .gear .toon { display: block; }
