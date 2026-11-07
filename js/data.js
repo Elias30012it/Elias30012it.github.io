@@ -37,3 +37,11 @@ window.TRAILS = [
   // Goiás
   { id: "saltos-rio-preto", name: "Saltos do Rio Preto", city: "Alto Paraíso de Goiás", uf: "GO", lat: -14.1714, lng: -47.8188, km: 11, elevation: 300, hours: 5, difficulty: "Moderada", tags: ["cachoeira", "chapada"], desc: "Trilha no Parque Nacional da Chapada dos Veadeiros até saltos de 80 e 120 m." },
 ];
+
+// Nomes dos estados (usados na lista, nos filtros e nos dois mapas).
+window.UF_NAMES = {
+  AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal",
+  ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais",
+  PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte",
+  RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins",
+};

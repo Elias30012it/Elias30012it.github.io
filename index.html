@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Pumping Life Trilhas</title>
   <meta name="description" content="Encontre trilhas perto de você, agende saídas em grupo e participe da comunidade." />
-  <!-- Só carrega scripts do próprio site; conexões externas apenas para fontes e dados do OpenStreetMap. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://overpass-api.de https://overpass.kumi.systems https://maps.mail.ru https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <!-- Scripts só do próprio site e do Google Maps; conexões externas para o mapa, as fontes e o OpenStreetMap. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://overpass-api.de https://overpass.kumi.systems https://maps.mail.ru https://nominatim.openstreetmap.org; worker-src blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -295,8 +295,8 @@
   <script src="js/shop-art.js"></script>
   <script src="js/osm-live.js"></script>
   <script src="js/fx.js"></script>
-  <script src="js/brazil-geo.js"></script>
-  <script src="js/map.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/gmap.js"></script>
   <script src="js/store.js"></script>
   <script src="js/app.js"></script>
 </body>

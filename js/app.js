@@ -12,7 +12,7 @@
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(h));
   }
-  const STATE_NAMES = Object.fromEntries(window.BRAZIL_GEO.states.map((s) => [s.uf, s.name]));
+  const STATE_NAMES = window.UF_NAMES;
   const DIFF_CLASS = { "Fácil": "easy", "Moderada": "medium", "Difícil": "hard" };
 
   // Toda trilha passa por aqui antes de ser usada: dados do OpenStreetMap, da busca ao vivo e do
@@ -615,12 +615,53 @@
     dlg.showModal();
   }
 
-  function initMap() {
+  // ---------- Mapa: Google Maps quando há chave; senão (ou se falhar) o mapa próprio em SVG ----------
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src; el.onload = resolve; el.onerror = () => reject(new Error(src));
+      document.head.appendChild(el);
+    });
+  }
+
+  // Aplica ao mapa recém-criado o estado atual da página (filtros, origem, estado escolhido).
+  function syncMap() {
+    renderTrails(false);
+    if (origin) mapView.setOrigin(origin, +$("#radius").value);
+    else if ($("#stateFilter").value) mapView.selectState($("#stateFilter").value);
+  }
+
+  let svgStarted = false;
+  async function useSvgMap(reason) {
+    if (svgStarted) return;
+    svgStarted = true;
+    if (!window.BRAZIL_GEO) await loadScript("js/brazil-geo.js");
+    if (!window.createSvgMap) await loadScript("js/map.js");
     mapView = window.createSvgMap($("#map"), TRAILS, {
       diffClass: DIFF_CLASS,
       onPick: openTrail,
       onState: (uf) => setStateFilter($("#stateFilter").value === uf ? "" : uf),
     });
+    syncMap();
+    if (reason) console.warn("Google Maps indisponível (" + reason + "); usando o mapa próprio.");
+  }
+
+  async function initMap() {
+    const cfg = window.PL_CONFIG || {};
+    const key = typeof cfg.googleMapsKey === "string" ? cfg.googleMapsKey.trim() : "";
+    if (!key || !window.createGoogleMap) return useSvgMap();
+    $("#map").innerHTML = '<p class="map-loading">Carregando mapa…</p>';
+    try {
+      const gm = await window.createGoogleMap($("#map"), TRAILS, {
+        key, mapId: cfg.googleMapId, diffClass: DIFF_CLASS, onPick: openTrail,
+        onFail: (why) => { mapView = null; useSvgMap(why); },
+      });
+      if (svgStarted) return; // a chave falhou enquanto carregava
+      mapView = gm;
+      syncMap();
+    } catch (e) {
+      useSvgMap(e.message);
+    }
   }
 
   // ---------- Agenda ----------

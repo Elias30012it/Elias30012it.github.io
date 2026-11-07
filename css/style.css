@@ -265,6 +265,29 @@ textarea { resize: vertical; }
 }
 .map-legend span { display: inline-flex; align-items: center; gap: .35rem; }
 
+/* Mapa do Google */
+.gmap { touch-action: auto; }
+.gmap-canvas { position: absolute; inset: 0; }
+.map-loading { display: grid; place-items: center; height: 100%; margin: 0; color: var(--muted); font-weight: 700; }
+.gm-pin {
+  width: 15px; height: 15px; transform: rotate(45deg); border-radius: 2px; cursor: pointer;
+  border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .15s;
+}
+.gm-pin:hover { transform: rotate(45deg) scale(1.35); }
+.gm-easy { background: #3d7a35; } .gm-medium { background: #b2801f; } .gm-hard { background: #a33b22; }
+.gm-cluster {
+  min-width: 34px; height: 30px; padding: 0 .5rem; display: grid; place-items: center; border-radius: 6px;
+  background: var(--sign); color: var(--sign-ink); font: 800 .82rem/1 var(--mono);
+  box-shadow: inset 0 0 0 2px var(--sign), inset 0 0 0 3.5px var(--sign-ink), 0 3px 8px rgba(0, 0, 0, .3);
+  cursor: pointer; transition: transform .15s;
+}
+.gm-cluster.mid { min-width: 40px; height: 34px; font-size: .9rem; }
+.gm-cluster.big { min-width: 48px; height: 38px; font-size: .95rem; }
+.gm-cluster:hover { transform: scale(1.08); }
+.gm-you { width: 16px; height: 16px; border-radius: 50%; background: var(--sign); border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(91, 52, 24, .5); animation: youPulse 2.2s ease-out infinite; }
+@keyframes youPulse { to { box-shadow: 0 0 0 18px rgba(91, 52, 24, 0); } }
+.gmap .map-card { z-index: 10; }
+
 /* Marca de trilha pintada (blaze) */
 .blaze { display: inline-block; flex: none; width: 7px; height: 16px; border-radius: 1.5px; background: var(--muted); box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 2.5px var(--line); }
 .blaze.easy { background: var(--easy); }
