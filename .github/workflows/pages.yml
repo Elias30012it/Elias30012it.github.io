@@ -1,0 +1,40 @@
+# Publica o site no GitHub Pages a cada envio para a branch principal.
+name: Publicar no GitHub Pages
+
+on:
+  push:
+    branches: [claude/affectionate-bell-asakxs]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Montar o site (só o necessário)
+        run: |
+          mkdir _site
+          cp -r index.html css js _site/
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
