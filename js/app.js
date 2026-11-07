@@ -562,7 +562,6 @@
   $("#clearFilters").addEventListener("click", () => {
     $("#difficulty").value = ""; $("#nameFilter").value = ""; $("#cityFilter").value = "";
     origin = null; $("#locStatus").textContent = ""; $("#cityInput").value = "";
-    closeRoute();
     mapView?.clearOrigin();
     setStateFilter("");
   });
@@ -606,14 +605,13 @@
         ${evs.length ? `<ul class="mini-events">${evs.map((e) => `<li><b>${fmtDate(e.date)}</b> às ${esc(e.time)} · ${e.attendees.length}/${e.slots} pessoas · com ${esc(e.host)}</li>`).join("")}</ul>` : '<p class="muted">Nenhuma saída agendada. Agende a primeira.</p>'}
         ${trailGear(t)}
         <div class="actions">
-          <button class="btn btn-ghost" type="button" data-route>Como chegar</button>
+          <a class="btn btn-ghost" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/dir/?api=1&amp;destination=${t.lat},${t.lng}">Como chegar</a>
           <button class="btn btn-ghost" type="button" data-close>Fechar</button>
           <button class="btn" type="button" data-schedule>Agendar esta trilha</button>
         </div>
       </div>`;
     dlg.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => dlg.close()));
     $("[data-schedule]", dlg).addEventListener("click", () => { dlg.close(); openEventForm(id); });
-    $("[data-route]", dlg).addEventListener("click", () => { dlg.close(); openRoute(t); });
     dlg.showModal();
   }
 
@@ -629,7 +627,6 @@
   // Aplica ao mapa recém-criado o estado atual da página (filtros, origem, estado escolhido).
   function syncMap() {
     renderTrails(false);
-    if (routeState && origin) setTimeout(computeRoute, 0);
     if (origin) mapView.setOrigin(origin, +$("#radius").value);
     else if ($("#stateFilter").value) mapView.selectState($("#stateFilter").value);
   }
@@ -671,128 +668,6 @@
       useSvgMap(e.message);
     }
   }
-
-  // ---------- Como chegar: rota dentro do site (OpenStreetMap) ----------
-  const MODES = { car: "Carro", bike: "Bicicleta", foot: "A pé" };
-  let routeState = null, routeCtrl = null;
-  const fmtDist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${num(Math.round(m / 100) / 10)} km`);
-  function fmtTime(s) {
-    const min = Math.max(1, Math.round(s / 60));
-    if (min < 60) return `${min} min`;
-    const h = Math.floor(min / 60), rest = min % 60;
-    return h >= 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${h} h${rest ? ` ${String(rest).padStart(2, "0")} min` : ""}`;
-  }
-
-  function routeHead(t) {
-    return `
-      <header class="route-head">
-        <div><p class="eyebrow">Como chegar</p><h2>${esc(t.name)}</h2><p class="muted">${esc(t.city)}, ${t.uf}</p></div>
-        <button class="icon-btn" type="button" data-route-close aria-label="Fechar rota">×</button>
-      </header>
-      <div class="route-modes" role="group" aria-label="Meio de transporte">${Object.entries(MODES).map(([k, v]) =>
-        `<button type="button" class="chip${routeState.mode === k ? " active" : ""}" data-mode="${k}" aria-pressed="${routeState.mode === k}">${v}</button>`).join("")}</div>`;
-  }
-
-  function renderRoute(body) {
-    const panel = $("#routePanel");
-    panel.hidden = false;
-    panel.innerHTML = routeHead(routeState.trail) + body;
-  }
-
-  function askStart() {
-    renderRoute(`
-      <p>De onde você vai sair?</p>
-      <div class="route-start">
-        <button class="btn" type="button" data-route-locate>Usar minha localização</button>
-        <form class="route-city" data-route-city>
-          <label class="sr-only" for="routeCity">Cidade de saída</label>
-          <input id="routeCity" type="search" list="routeCities" placeholder="Ou digite a cidade, ex.: Campinas, SP" autocomplete="off" />
-          <datalist id="routeCities"></datalist>
-          <button class="btn btn-ghost" type="submit">Traçar</button>
-        </form>
-      </div>
-      <p class="route-msg" hidden></p>`);
-  }
-
-  async function computeRoute() {
-    const { trail, mode } = routeState;
-    routeCtrl?.abort();
-    routeCtrl = new AbortController();
-    renderRoute(`<p class="route-loading"><span class="spinner" aria-hidden="true"></span> Calculando rota de ${esc(MODES[mode].toLowerCase())} saindo de ${esc(origin.label)}…</p>`);
-    try {
-      const r = await window.Routing.getRoute(origin, trail, mode, routeCtrl.signal);
-      mapView?.showRoute?.(r.line, origin, trail);
-      renderRoute(`
-        <div class="route-summary">
-          <div><strong>${fmtDist(r.distance)}</strong><span>distância</span></div>
-          <div><strong>${fmtTime(r.duration)}</strong><span>tempo estimado</span></div>
-        </div>
-        <p class="route-from">Saindo de <b>${esc(origin.label)}</b> · <button class="link" type="button" data-route-change>trocar</button></p>
-        <details class="route-steps">
-          <summary>Ver passo a passo (${r.steps.length})</summary>
-          <ol>${r.steps.map((s) => `<li><span>${esc(s.text)}</span>${s.last ? "" : `<small>${fmtDist(s.distance)}</small>`}</li>`).join("")}</ol>
-        </details>
-        <p class="route-credit">Rota calculada pelo OpenStreetMap (OSRM/FOSSGIS). O destino é o ponto da trilha mais próximo de uma estrada ou caminho; confira as condições antes de sair.</p>`);
-      $("#map").scrollIntoView({ behavior: window.FX.reduce() ? "auto" : "smooth", block: "start" });
-    } catch (e) {
-      if (e.name === "AbortError") return;
-      const msg = e.code === "NoRoute"
-        ? `Não há caminho de ${MODES[mode].toLowerCase()} até essa trilha (pode ser numa ilha ou sem estrada próxima).`
-        : IN_PREVIEW
-          ? "Esta prévia não acessa sites externos, então não calcula rotas. Abra o site completo para ver o caminho."
-          : "O serviço de rotas não respondeu agora. Tente de novo em instantes.";
-      renderRoute(`<p class="route-msg error">${esc(msg)}</p>
-        <p class="route-from">Saindo de <b>${esc(origin.label)}</b> · <button class="link" type="button" data-route-change>trocar</button> · <button class="link" type="button" data-route-retry>tentar de novo</button></p>`);
-    }
-  }
-
-  function openRoute(t) {
-    routeState = { trail: t, mode: routeState?.mode || "car" };
-    location.hash = "#explorar";
-    if (origin) computeRoute(); else askStart();
-    $("#routePanel").scrollIntoView({ behavior: window.FX.reduce() ? "auto" : "smooth", block: "nearest" });
-  }
-
-  function closeRoute() {
-    routeCtrl?.abort();
-    routeState = null;
-    mapView?.clearRoute?.();
-    $("#routePanel").hidden = true;
-    $("#routePanel").innerHTML = "";
-  }
-
-  $("#routePanel").addEventListener("click", (e) => {
-    if (e.target.closest("[data-route-close]")) { closeRoute(); return; }
-    const m = e.target.closest("[data-mode]");
-    if (m && routeState) { routeState.mode = m.dataset.mode; origin ? computeRoute() : askStart(); return; }
-    if (e.target.closest("[data-route-change]")) { askStart(); return; }
-    if (e.target.closest("[data-route-retry]")) { computeRoute(); return; }
-    if (e.target.closest("[data-route-locate]")) {
-      const msg = $("#routePanel .route-msg");
-      if (!navigator.geolocation) { msg.hidden = false; msg.textContent = "Este navegador não informa a localização. Digite a cidade."; return; }
-      msg.hidden = false; msg.textContent = "Obtendo sua localização…";
-      navigator.geolocation.getCurrentPosition(
-        (p) => { setOrigin({ lat: p.coords.latitude, lng: p.coords.longitude, label: "sua localização" }); computeRoute(); },
-        () => { msg.textContent = "Não foi possível acessar sua localização. Digite a cidade."; },
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
-    }
-  });
-  $("#routePanel").addEventListener("input", (e) => {
-    if (e.target.id !== "routeCity") return;
-    $("#routeCities").innerHTML = cityMatches(e.target.value, 8).map((c) => `<option value="${esc(c.name)}, ${c.uf}">`).join("");
-  });
-  $("#routePanel").addEventListener("submit", async (e) => {
-    if (!e.target.closest("[data-route-city]")) return;
-    e.preventDefault();
-    const q = $("#routeCity").value.trim();
-    if (!q) return;
-    const o = await geocode(q);
-    if (!o) { const msg = $("#routePanel .route-msg"); msg.hidden = false; msg.textContent = `Não encontramos “${q}”. Escolha uma cidade da lista.`; return; }
-    $("#cityInput").value = o.label;
-    setOrigin(o);
-    computeRoute();
-  });
 
   // ---------- Agenda ----------
   let eventFilter = "upcoming";

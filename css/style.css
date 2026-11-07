@@ -357,36 +357,6 @@ textarea { resize: vertical; }
 .trail-meta abbr { text-decoration: none; cursor: help; }
 .source-note { font-size: .85rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: .7rem; }
 
-/* Como chegar */
-.route-panel { display: grid; gap: .75rem; padding: 1rem 1.1rem; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--forest); border-radius: var(--r-lg); animation: rise .35s cubic-bezier(.2, .7, .2, 1) both; }
-.route-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
-.route-head .eyebrow { margin: 0 0 .15rem; }
-.route-head h2 { font-size: 1.15rem; }
-.route-modes { display: flex; flex-wrap: wrap; gap: .35rem; }
-.route-start { display: grid; gap: .5rem; }
-.route-city { display: flex; gap: .4rem; }
-.route-city input { min-width: 0; }
-.route-summary { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--r); }
-.route-summary div { display: grid; padding: .6rem .8rem; }
-.route-summary div + div { border-left: 1px solid var(--line); }
-.route-summary strong { font-family: var(--mono); font-size: 1.3rem; font-weight: 600; }
-.route-summary span { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.route-from { font-size: .88rem; color: var(--muted); }
-.route-steps summary { cursor: pointer; font-weight: 800; color: var(--forest); }
-.route-steps ol { margin: .6rem 0 0; padding-left: 1.4rem; display: grid; gap: .45rem; max-height: 320px; overflow-y: auto; font-size: .9rem; }
-.route-steps li { display: flex; justify-content: space-between; gap: .75rem; }
-.route-steps li::marker { font-family: var(--mono); color: var(--muted); }
-.route-steps small { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
-.route-credit { font-size: .76rem; color: var(--muted); }
-.route-loading { display: flex; align-items: center; gap: .55rem; color: var(--muted); }
-.route-msg { font-size: .88rem; color: var(--muted); }
-.route-msg.error { color: var(--danger); font-weight: 600; }
-.lf-flag { display: block; width: 22px; height: 26px; background:
-  linear-gradient(#5b3418, #5b3418) 2px 0 / 3px 26px no-repeat,
-  linear-gradient(135deg, #a9c98a 50%, transparent 50%) 5px 2px / 16px 12px no-repeat; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
-.svgmap .route { fill: none; stroke: var(--forest); stroke-width: calc(var(--u, 1) * 4); stroke-linejoin: round; stroke-linecap: round; pointer-events: none; paint-order: stroke; }
-.svgmap .route-end { fill: var(--sign-accent); stroke: var(--sign); stroke-width: calc(var(--u, 1) * 2); pointer-events: none; }
-
 /* Autocompletar de cidades */
 .combo { position: relative; flex: 1 1 260px; min-width: 0; }
 .combo input { width: 100%; }

@@ -83,8 +83,7 @@
     cluster.addLayers(Object.values(markers).map((x) => x.m));
     map.addLayer(cluster);
 
-    let you = null, circle = null, route = null;
-    const flagIcon = L.divIcon({ className: "", html: '<span class="lf-flag"></span>', iconSize: [22, 26], iconAnchor: [4, 24] });
+    let you = null, circle = null;
     const youIcon = L.divIcon({ className: "", html: '<span class="lf-you"></span>', iconSize: [18, 18], iconAnchor: [9, 9] });
 
     const legend = document.createElement("div");
@@ -123,18 +122,6 @@
         if (pts.length) map.flyToBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 12, duration: 0.6 });
       },
       refresh() { map.invalidateSize(); },
-      showRoute(line, from, to) {
-        route?.remove();
-        route = L.layerGroup([
-          L.polyline(line, { color: "#ffffff", weight: 9, opacity: 0.9, interactive: false }),
-          L.polyline(line, { color: "#2e5b38", weight: 5, opacity: 0.95, interactive: false }),
-          L.marker([to.lat, to.lng], { icon: flagIcon, title: "Destino", keyboard: false, zIndexOffset: 6000 }),
-        ]).addTo(map);
-        if (!you) you = L.marker([from.lat, from.lng], { icon: youIcon, title: "Saída", zIndexOffset: 5000, keyboard: false }).addTo(map);
-        map.invalidateSize();
-        map.flyToBounds(L.latLngBounds(line), { padding: [30, 30], duration: 0.7 });
-      },
-      clearRoute() { route?.remove(); route = null; },
     };
   };
 })();
