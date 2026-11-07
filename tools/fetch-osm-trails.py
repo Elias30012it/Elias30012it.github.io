@@ -417,6 +417,13 @@ def process(raw):
             if not uf:
                 continue  # fora do território (fronteira imprecisa ou mar)
             city = nearest_city(c["lat"], c["lng"], uf, by_uf, allc)
+            # O contorno simplificado erra em ilhas e divisas (ex.: Fernando de Noronha caía no RN).
+            # Se a sede de outro município está bem mais perto e a menos de 15 km, ela vale mais.
+            near = nearest_city(c["lat"], c["lng"], None, {}, allc)
+            d_state = hav((c["lat"], c["lng"]), (city[2], city[3]))
+            d_near = hav((c["lat"], c["lng"]), (near[2], near[3]))
+            if near[1] != uf and d_near < 15 and d_near < d_state / 2:
+                city, uf = near, near[1]
         tags = c["tags"]
         diff, estimated = difficulty(tags, c["km"])
         el = c["el"]

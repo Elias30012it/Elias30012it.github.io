@@ -644,6 +644,13 @@
     });
     syncMap();
     if (reason) console.warn("Mapa online indisponível (" + reason + "); usando o mapa próprio.");
+    // Aviso: este mapa não tem ruas. No arquivo único (link do Claude), aponta para o site completo.
+    const note = document.createElement("p");
+    note.className = "map-note";
+    note.innerHTML = window.PL_FORCE_SVG
+      ? 'Mapa simplificado, sem ruas. <a href="https://elias30012it.github.io/" target="_blank" rel="noopener noreferrer">Abrir com ruas e relevo</a>'
+      : "Não deu para carregar o mapa com ruas agora. Mostrando o mapa simplificado.";
+    $("#map").appendChild(note);
   }
 
   async function initMap() {
