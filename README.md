@@ -38,21 +38,16 @@ js/store.js     persistência (localStorage) com validação + dados iniciais
 js/app.js       lógica: lista, filtros, agenda, comunidade, loja
 ```
 
-## Mapa do Google
+## Mapa
 
-O mapa usa a API do Google Maps quando há chave em `js/config.js`; sem chave (ou se a chave falhar) o site usa
-o mapa próprio em SVG, baixado só nesse caso. Para ativar:
+O mapa usa a biblioteca [Leaflet](https://leafletjs.com) (BSD-2) com mapas abertos e gratuitos, sem chave:
+**Mapa** (OpenStreetMap) e **Relevo** (OpenTopoMap, com curvas de nível). Os marcadores são agrupados com
+Leaflet.markercluster (MIT). As duas bibliotecas estão em `js/vendor/leaflet/` com as licenças.
+Se os mapas não carregarem (sem internet ou bloqueados) — e na versão de arquivo único — o site usa o mapa
+próprio em SVG (`js/map.js` + `js/brazil-geo.js`), baixado só nesse caso.
 
-1. No Google Cloud Console, crie um projeto com faturamento ativo e ative a **Maps JavaScript API**.
-2. Em **APIs e serviços → Credenciais**, crie uma chave de API e restrinja:
-   - **Restrições de aplicativo:** Referenciadores HTTP → `https://elias30012it.github.io/*`
-   - **Restrições de API:** só "Maps JavaScript API".
-3. (Opcional) Em **Google Maps Platform → Gerenciamento de mapas**, crie um ID de mapa JavaScript.
-4. Coloque a chave (e o ID) em `js/config.js`.
-
-A chave fica visível no navegador, como em todo site com Google Maps; as restrições acima impedem o uso dela em
-outros sites. O agrupamento de marcadores é a biblioteca oficial `@googlemaps/markerclusterer` (Apache-2.0),
-copiada em `js/vendor/`.
+Os servidores do OpenStreetMap e do OpenTopoMap são mantidos por voluntários e pedem uso moderado e a
+atribuição que aparece no canto do mapa. Para muito tráfego, troque por um provedor de mapas com plano próprio.
 
 ## Segurança
 

@@ -615,7 +615,7 @@
     dlg.showModal();
   }
 
-  // ---------- Mapa: Google Maps quando há chave; senão (ou se falhar) o mapa próprio em SVG ----------
+  // ---------- Mapa: Leaflet com mapas abertos; se não carregar (ou no arquivo único), o mapa próprio em SVG ----------
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const el = document.createElement("script");
@@ -643,21 +643,19 @@
       onState: (uf) => setStateFilter($("#stateFilter").value === uf ? "" : uf),
     });
     syncMap();
-    if (reason) console.warn("Google Maps indisponível (" + reason + "); usando o mapa próprio.");
+    if (reason) console.warn("Mapa online indisponível (" + reason + "); usando o mapa próprio.");
   }
 
   async function initMap() {
-    const cfg = window.PL_CONFIG || {};
-    const key = typeof cfg.googleMapsKey === "string" ? cfg.googleMapsKey.trim() : "";
-    if (!key || !window.createGoogleMap) return useSvgMap();
+    if (window.PL_FORCE_SVG || !window.createLeafletMap) return useSvgMap();
     $("#map").innerHTML = '<p class="map-loading">Carregando mapa…</p>';
     try {
-      const gm = await window.createGoogleMap($("#map"), TRAILS, {
-        key, mapId: cfg.googleMapId, diffClass: DIFF_CLASS, onPick: openTrail,
+      const lm = await window.createLeafletMap($("#map"), TRAILS, {
+        diffClass: DIFF_CLASS, onPick: openTrail,
         onFail: (why) => { mapView = null; useSvgMap(why); },
       });
-      if (svgStarted) return; // a chave falhou enquanto carregava
-      mapView = gm;
+      if (svgStarted) return; // o mapa online falhou enquanto carregava
+      mapView = lm;
       syncMap();
     } catch (e) {
       useSvgMap(e.message);
